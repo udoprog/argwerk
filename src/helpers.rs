@@ -1,51 +1,41 @@
 use std::fmt;
 
 struct Doc {
-    initial: Box<str>,
+    init: Box<str>,
     docs: Vec<&'static str>,
 }
 
-impl Doc {
-    fn format(&self, max_initial: usize) -> impl fmt::Display + '_ {
-        DocFormat::with_max_initial(&self.initial, &self.docs, max_initial)
-    }
-}
-
 /// Helper to format a documentation snippet.
-struct DocFormat<'a> {
-    initial: &'a str,
+struct DocFmt<'a> {
+    init: &'a str,
     docs: &'a [&'static str],
-    max_initial: Option<usize>,
+    init_len: Option<usize>,
 }
 
-impl<'a> DocFormat<'a> {
-    fn new(initial: &'a str, docs: &'a [&'static str]) -> Self {
+impl<'a> DocFmt<'a> {
+    fn new(init: &'a str, docs: &'a [&'static str]) -> Self {
         Self {
-            initial,
+            init,
             docs,
-            max_initial: None,
+            init_len: None,
         }
     }
 
-    fn with_max_initial(
-        initial: &'a str,
-        docs: &'a [&'static str],
-        max_initial: usize,
-    ) -> impl fmt::Display + 'a {
-        DocFormat {
-            initial,
+    fn switch(init: &'a str, docs: &'a [&'static str], init_len: usize) -> Self {
+        DocFmt {
+            init,
             docs,
-            max_initial: Some(max_initial),
+            init_len: Some(init_len),
         }
     }
 }
 
-impl fmt::Display for DocFormat<'_> {
+impl fmt::Display for DocFmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.docs.is_empty() {
-            textwrap(f, self.docs, 80, &self.initial, self.max_initial)?;
+            textwrap(f, self.docs, 80, &self.init, self.init_len)?;
         } else {
-            write!(f, "{}", self.initial)?;
+            write!(f, "{}", self.init)?;
         }
 
         Ok(())
@@ -56,9 +46,9 @@ impl fmt::Display for DocFormat<'_> {
 pub struct Help<'a> {
     usage: &'a str,
     docs: &'a [&'static str],
-    field_docs: Vec<Doc>,
-    field_initial: String,
-    max_initial: usize,
+    switches: Vec<Doc>,
+    init: String,
+    init_len: usize,
 }
 
 impl<'a> Help<'a> {
@@ -67,27 +57,27 @@ impl<'a> Help<'a> {
         Self {
             usage,
             docs,
-            field_docs: Vec::new(),
-            field_initial: String::new(),
-            max_initial: 0,
+            switches: Vec::new(),
+            init: String::new(),
+            init_len: 0,
         }
-    }
-
-    /// Get a mutable work buffer for the prefix.
-    pub fn field_initial_mut(&mut self) -> &mut String {
-        self.field_initial.clear();
-        &mut self.field_initial
     }
 
     /// Add the documentation for a single fields.
-    pub fn field_doc(&mut self, docs: Vec<&'static str>) {
+    pub fn switch(&mut self, docs: Vec<&'static str>) {
         if !docs.is_empty() {
-            self.field_initial.push_str("  ");
+            self.init.push_str("  ");
         }
 
-        self.max_initial = usize::max(self.max_initial, self.field_initial.len());
-        let initial = self.field_initial.clone().into();
-        self.field_docs.push(Doc { initial, docs })
+        self.init_len = usize::max(self.init_len, self.init.len());
+        let init = self.init.clone().into();
+        self.switches.push(Doc { init, docs })
+    }
+
+    /// Get a mutable work buffer for the prefix.
+    pub fn switch_init_mut(&mut self) -> &mut String {
+        self.init.clear();
+        &mut self.init
     }
 }
 
@@ -96,16 +86,16 @@ impl fmt::Display for Help<'_> {
         writeln!(f, "Usage: {name}", name = self.usage)?;
 
         if !self.docs.is_empty() {
-            writeln!(f, "{}", DocFormat::new("", &self.docs))?;
+            writeln!(f, "{}", DocFmt::new("", &self.docs))?;
         }
 
         writeln!(f)?;
 
-        if !self.field_docs.is_empty() {
+        if !self.switches.is_empty() {
             writeln!(f, "Options:")?;
 
-            for doc in &self.field_docs {
-                writeln!(f, "{}", doc.format(self.max_initial))?;
+            for d in &self.switches {
+                writeln!(f, "{}", DocFmt::switch(&d.init, &d.docs, self.init_len))?;
             }
         }
 
@@ -118,8 +108,8 @@ fn textwrap<I>(
     f: &mut fmt::Formatter<'_>,
     lines: I,
     width: usize,
-    initial: &str,
-    max_initial: Option<usize>,
+    init: &str,
+    init_len: Option<usize>,
 ) -> fmt::Result
 where
     I: IntoIterator,
@@ -127,8 +117,8 @@ where
 {
     let mut it = lines.into_iter().peekable();
 
-    let fill = max_initial.unwrap_or(initial.len());
-    let mut initial = Some(initial);
+    let fill = init_len.unwrap_or(init.len());
+    let mut init = Some(init);
 
     let trim = match it.peek() {
         Some(line) => Some(chars_count(line.as_ref(), |c| c == ' ')),
@@ -188,9 +178,9 @@ where
                 space_span = Some((start, start + leap));
             }
 
-            let initial = initial.take().unwrap_or_default();
-            f.write_str(initial)?;
-            fill_spaces(f, fill.saturating_sub(initial.len()))?;
+            let init = init.take().unwrap_or_default();
+            f.write_str(init)?;
+            fill_spaces(f, fill.saturating_sub(init.len()))?;
 
             if let Some((start, end)) = space_span {
                 writeln!(f, "{}", &line[..start])?;

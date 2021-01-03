@@ -612,20 +612,20 @@ macro_rules! __parse_inner {
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        let prefix = $help.field_initial_mut();
+        let init = $help.switch_init_mut();
 
-        prefix.push_str("  <");
-        prefix.push_str(stringify!($first));
-        prefix.push_str(">");
+        init.push_str("  <");
+        init.push_str(stringify!($first));
+        init.push_str(">");
 
         $(
-            prefix.push_str(" <");
-            prefix.push_str(stringify!($rest));
-            prefix.push_str(">");
+            init.push_str(" <");
+            init.push_str(stringify!($rest));
+            init.push_str(">");
         )*
 
         let docs = vec![$($doc,)*];
-        $help.field_doc(docs);
+        $help.switch(docs);
 
         $crate::__parse_inner!(@help $help, $($tail)*);
     }};
@@ -637,14 +637,14 @@ macro_rules! __parse_inner {
         #[rest] $binding:ident $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        let prefix = $help.field_initial_mut();
+        let init = $help.switch_init_mut();
 
-        prefix.push_str("  <");
-        prefix.push_str(stringify!($binding));
-        prefix.push_str("..>");
+        init.push_str("  <");
+        init.push_str(stringify!($binding));
+        init.push_str("..>");
 
         let docs = vec![$($doc,)*];
-        $help.field_doc(docs);
+        $help.switch(docs);
 
         $crate::__parse_inner!(@help $help, $($tail)*);
     }};
@@ -656,25 +656,25 @@ macro_rules! __parse_inner {
         $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        let prefix = $help.field_initial_mut();
+        let init = $help.switch_init_mut();
 
-        prefix.clear();
-        prefix.push_str("  ");
-        prefix.push_str($first);
+        init.clear();
+        init.push_str("  ");
+        init.push_str($first);
 
         $(
-            prefix.push_str(", ");
-            prefix.push_str($rest);
+            init.push_str(", ");
+            init.push_str($rest);
         )*
 
         $(
-            prefix.push_str(" <");
-            prefix.push_str(stringify!($arg));
-            prefix.push('>');
+            init.push_str(" <");
+            init.push_str(stringify!($arg));
+            init.push('>');
         )*
 
         let docs = vec![$($doc,)*];
-        $help.field_doc(docs);
+        $help.switch(docs);
 
         $crate::__parse_inner!(@help $help, $($tail)*);
     }};
