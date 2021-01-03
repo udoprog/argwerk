@@ -7,7 +7,7 @@ fn main() -> Result<(), argwerk::Error> {
             help: bool,
             file: Option<String>,
             limit: usize = 42,
-            positional: Option<(String, String)>,
+            positional: Option<(String, Option<String>)>,
             rest: Vec<String>,
         }
         /// Print this help.
@@ -27,8 +27,8 @@ fn main() -> Result<(), argwerk::Error> {
             Ok(())
         }
         /// Takes argument at <foo> and <bar>.
-        (foo, bar, #[rest] args) if positional.is_none() => {
-            positional = Some((foo.into(), bar.into()));
+        (foo, #[option] bar, #[rest] args) if positional.is_none() => {
+            positional = Some((foo, bar));
             rest = args;
             Ok(())
         }

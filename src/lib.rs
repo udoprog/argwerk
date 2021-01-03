@@ -10,6 +10,8 @@
 //!
 //! For a more complete commandline parsing library, use [clap].
 //!
+//! See the documentation for [argwerk::parse!] for how to use.
+//!
 //! # Examples
 //!
 //! > This is available as a runnable example:
@@ -27,7 +29,7 @@
 //!         help: bool,
 //!         file: Option<String>,
 //!         limit: usize = 42,
-//!         positional: Option<(String, String)>,
+//!         positional: Option<(String, Option<String>)>,
 //!         rest: Vec<String>,
 //!     }
 //!     /// Print this help.
@@ -47,18 +49,18 @@
 //!         Ok(())
 //!     }
 //!     /// Takes argument at <foo> and <bar>.
-//!     (foo, bar, #[rest] args) if positional.is_none() => {
-//!         positional = Some((foo.into(), bar.into()));
+//!     (foo, #[option] bar, #[rest] args) if positional.is_none() => {
+//!         positional = Some((foo, bar));
 //!         rest = args;
 //!         Ok(())
 //!     }
 //! }?;
 //!
 //! dbg!(args);
-//! Ok(())
-//! # }
+//! # Ok(()) }
 //! ```
 //!
+//! [argwerk::parse!]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
 //! [clap]: https://docs.rs/clap
 
 #![deny(missing_docs)]
@@ -171,12 +173,49 @@ pub enum ErrorKind {
 /// [ErrorKind::Error] error to be raised associated with that argument
 /// with the relevant error attached.
 ///
-/// This also generated two helper functions available in the branches:
+/// This also generated two helper functions available in the parse branches:
 /// * `write_help` - Which can write help to something implementing
 ///   [std::io::Write].
-/// * `print_help` - Which will write the help string to [io::stdout].
+/// * `print_help` - Which will write the help string to [std::io::stdout].
 ///
-/// These are only available in the scope of the matching branches.
+/// The [parse] macro can be invoked in two ways.
+///
+/// Using `std::env::args()` to get arguments from the environment:
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         help: bool,
+///         limit: usize = 10,
+///     }
+/// }?;
+/// # Ok(()) }
+/// ```
+///
+/// Or explicitly specifying an iterator to use with `<iter> => <config>`. This
+/// works with anything that implements `AsRef<str>`:
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     vec!["foo", "bar", "baz"] =>
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         help: bool,
+///         limit: usize = 10,
+///         positional: Option<(&'static str, &'static str, &'static str)>,
+///     }
+///     (a, b, c) => {
+///         positional = Some((a, b, c));
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.positional, Some(("foo", "bar", "baz")));
+/// # Ok(()) }
+/// ```
 ///
 /// # Arguments
 ///
@@ -203,7 +242,7 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// # Argument branches
+/// ## Argument branches
 ///
 /// The basic form of an argument branch is:
 ///
@@ -227,7 +266,7 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// # Parse the rest of available arguments
+/// ## Parse all available arguments with `#[rest]`
 ///
 /// You can write a branch that receives the rest of the arguments using the
 /// `#[rest]` attribute.
@@ -250,45 +289,29 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// It's also possible to annotate a positional argument with `#[rest]`.
+/// ## Parse positional arguments
+///
+/// Positional arguments are parsed by specifying a tuple in the match branch.
+///
+/// Positional arguments support the following attributes:
+/// * `#[option]` - which will cause the argument to be optionally parsed into
+///   an `Option<I::Item>`.
+/// * `#[rest]` - which will parse the rest of the arguments.
+///
+/// The following is a basic example without attributes. Both `foo` and `bar`
+/// are required if the branch matches.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
-///     vec![String::from("foo"), String::from("bar"), String::from("baz")] =>
-///     /// A simple test command.
-///     "testcommand [-h]" {
-///         first: Option<String>,
-///         rest: Vec<String>,
-///     }
-///     (a, #[rest] args) => {
-///         first = Some(a);
-///         rest = args;
-///         Ok(())
-///     }
-/// }?;
-///
-/// assert_eq!(args.first.as_deref(), Some("foo"));
-/// assert_eq!(args.rest, &["bar", "baz"]);
-/// # Ok(()) }
-/// ```
-///
-/// # Parse position arguments.
-///
-/// You can write a branch that receives the rest of the arguments using the
-/// `#[rest]` attribute.
-///
-/// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     ["a", "b"].iter().copied() =>
+///     ["a", "b"].iter().copied().map(String::from) =>
 ///     /// A simple test command.
 ///     "testcommand [-h]" {
 ///         positional: Option<(String, String)>,
 ///     }
 ///     /// Takes argument at <foo> and <bar>.
 ///     (foo, bar) if positional.is_none() => {
-///         positional = Some((foo.into(), bar.into()));
+///         positional = Some((foo, bar));
 ///         Ok(())
 ///     }
 /// }?;
@@ -297,40 +320,31 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// This will consume the rest of the arguments.
-///
-/// # Examples
+/// The following showcases positional parameters using `#[option]` and
+/// `#[rest]`.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
+///     ["foo", "bar", "baz"].iter().copied().map(String::from) =>
 ///     /// A simple test command.
-///     ///
-///     /// This is nice!
 ///     "testcommand [-h]" {
-///         help: bool,
-///         file: Option<String>,
-///         limit: usize = 42,
+///         first: String,
+///         second: Option<String>,
+///         rest: Vec<String>,
 ///     }
-///     /// Print the help.
-///     "-h" | "--help" => {
-///         help = true;
-///         print_help();
-///         Ok(())
-///     }
-///     /// Hello World.
-///     "--limit" | "-l", n => {
-///         limit = str::parse(&n)?;
+///     (a, #[option] b, #[rest] c) => {
+///         first = a;
+///         second = b;
+///         rest = c;
 ///         Ok(())
 ///     }
 /// }?;
 ///
-/// if args.help {
-///     return Ok(());
-/// }
-///
-/// Ok(())
-/// # }
+/// assert_eq!(args.first, "foo");
+/// assert_eq!(args.second.as_deref(), Some("bar"));
+/// assert_eq!(args.rest, &["baz"]);
+/// # Ok(()) }
 /// ```
 #[macro_export]
 macro_rules! parse {
@@ -410,6 +424,16 @@ macro_rules! __parse_inner {
         parser()
     }};
 
+    // Parse the rest of the available arguments.
+    (@positional #[rest] $it:ident, $arg:ident) => {
+        (&mut $it).map(String::from).collect::<Vec<String>>();
+    };
+
+    // Parse an optional argument.
+    (@positional #[option] $it:ident, $arg:ident) => {
+        $it.next()
+    };
+
     // Parse the rest of the arguments.
     (@positional $it:ident, $arg:ident) => {
         match $it.next() {
@@ -455,7 +479,7 @@ macro_rules! __parse_inner {
         $w:ident,
         $prefix:ident,
         $(#[doc = $doc:literal])*
-        ($first:ident $(, $rest:ident)* $(, #[rest] $last:ident)?)
+        ($first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*)
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
@@ -556,7 +580,7 @@ macro_rules! __parse_inner {
     (@branch
         $argument:ident, $it:ident,
         $(#[doc = $doc:literal])*
-        ($first:ident $(, $rest:ident)* $(, #[rest] $last:ident)?)
+        ($first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*)
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
@@ -564,8 +588,7 @@ macro_rules! __parse_inner {
             let __argwerk_error_argument = std::convert::AsRef::<str>::as_ref(&$argument).into();
 
             let $first = $argument;
-            $(let $rest = $crate::__parse_inner!(@positional $it, $rest);)*
-            $(let $last = (&mut $it).map(String::from).collect::<Vec<String>>();)*
+            $(let $rest = $crate::__parse_inner!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                 $block

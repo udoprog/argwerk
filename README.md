@@ -12,6 +12,8 @@ be cheaply incorporated into a tool.
 
 For a more complete commandline parsing library, use [clap].
 
+See the documentation for [argwerk::parse!] for how to use.
+
 ## Examples
 
 > This is available as a runnable example:
@@ -28,7 +30,7 @@ let args = argwerk::parse! {
         help: bool,
         file: Option<String>,
         limit: usize = 42,
-        positional: Option<(String, String)>,
+        positional: Option<(String, Option<String>)>,
         rest: Vec<String>,
     }
     /// Print this help.
@@ -48,17 +50,17 @@ let args = argwerk::parse! {
         Ok(())
     }
     /// Takes argument at <foo> and <bar>.
-    (foo, bar, #[rest] args) if positional.is_none() => {
-        positional = Some((foo.into(), bar.into()));
+    (foo, #[option] bar, #[rest] args) if positional.is_none() => {
+        positional = Some((foo, bar));
         rest = args;
         Ok(())
     }
 }?;
 
 dbg!(args);
-Ok(())
 ```
 
+[argwerk::parse!]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
 [clap]: https://docs.rs/clap
 
 License: MIT/Apache-2.0
