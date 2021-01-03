@@ -73,7 +73,7 @@
 //!     /// Takes argument at <foo> and <bar>.
 //!     ///
 //!     ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
-//!     foo, #[option] bar, #[rest] args if positional.is_none() => {
+//!     [foo, #[option] bar, #[rest] args] if positional.is_none() => {
 //!         positional = Some((foo, bar));
 //!         rest = args;
 //!         Ok(())
@@ -232,7 +232,7 @@ pub enum ErrorKind {
     ///     vec!["foo"] => "command [-h]" { }
     ///     // This errors because `b` is a required argument, but we only have
     ///     // one.
-    ///     a, b => { Ok(()) }
+    ///     [a, b] => { Ok(()) }
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingPositional { .. }));
@@ -277,11 +277,6 @@ pub enum ErrorKind {
 /// [ErrorKind::Error] error to be raised associated with that argument
 /// with the relevant error attached.
 ///
-/// This also generated two helper functions available in the parse branches:
-/// * `write_help` - Which can write help to something implementing
-///   [std::io::Write].
-/// * `print_help` - Which will write the help string to [std::io::stdout].
-///
 /// The [parse] macro can be invoked in two ways.
 ///
 /// Using `std::env::args()` to get arguments from the environment:
@@ -294,12 +289,19 @@ pub enum ErrorKind {
 ///         help: bool,
 ///         limit: usize = 10,
 ///     }
+///     /// Print this help.
+///     "-h" | "--help" => {
+///         help = true;
+///         print_help();
+///         Ok(())
+///     }
 /// }?;
 /// # Ok(()) }
 /// ```
 ///
-/// Or explicitly specifying an iterator to use with `<iter> => <config>`. This
-/// works with anything that implements `AsRef<str>`:
+/// Or explicitly specifying an iterator to use with `<into_iter> => <config>`.
+/// This works with anything that can be converted into an iterator using
+/// [IntoIterator] where its items implements [AsRef\<str\>][AsRef].
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -308,10 +310,9 @@ pub enum ErrorKind {
 ///     /// A simple test command.
 ///     "command [-h]" {
 ///         help: bool,
-///         limit: usize = 10,
 ///         positional: Option<(&'static str, &'static str, &'static str)>,
 ///     }
-///     a, b, c => {
+///     [a, b, c] => {
 ///         positional = Some((a, b, c));
 ///         Ok(())
 ///     }
@@ -321,43 +322,60 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// ## Arguments structure
+/// ## Args structure
 ///
 /// The first part of the [parse] macro defines the state available to the
 /// parser. These are field-like declarations which can specify a default value.
-/// This is the only required component of the macro.
-///
 /// Fields which do not specify an initialization value will be initialized
-/// through [Default::default].
+/// through [Default::default]. This is the only required component of the
+/// macro.
+///
+/// The macro returns an anonymous `Args` struct with fields matching this
+/// declaration. This can be used to conveniently group and access data
+/// populated during argument parsing.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
+///     ["--limit", "20"].iter().copied() =>
 ///     /// A simple test command.
 ///     "command [-h]" {
 ///         help: bool,
 ///         limit: usize = 10,
 ///     }
+///     /// Print this help.
+///     "-h" | "--help" => {
+///         help = true;
+///         print_help();
+///         Ok(())
+///     }
+///     /// Specify a limit (default: 10).
+///     "--limit", n => {
+///         limit = str::parse(&n)?;
+///         Ok(())
+///     }
 /// }?;
 ///
 /// assert_eq!(args.help, false);
-/// assert_eq!(args.limit, 10);
+/// assert_eq!(args.limit, 20);
 /// # Ok(()) }
 /// ```
 ///
-/// ## Argument branches
+/// ## Parsing switches
 ///
-/// The basic form of an argument branch is:
+/// The basic form of an argument branch parsing a switch is one which matches
+/// on a string literal. The string literal (e.g. `"--help"`) will then be
+/// treated as the switch for the branch. You can specify multiple matches for
+/// each branch by separating them with a pipe (`|`).
+///
+/// > Note: it's not necessary that switches start with `-`, but this is assumed
+/// > for convenience.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
-///     vec![String::from("-h")] =>
-///     /// A simple test command.
-///     "command [-h]" {
-///         help: bool,
-///     }
-///     /// Print the help.
+///     vec!["-h"] =>
+///     "command [-h]" { help: bool }
 ///     "-h" | "--help" => {
 ///         help = true;
 ///         print_help();
@@ -369,12 +387,40 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// ## Switch documentation
+/// ## Parsing positional arguments
+///
+/// Positional arguments are parsed by specifying a vector of bindings in a
+/// branch. Like `[foo, bar, baz]`.
+///
+/// The following is a basic example. Both `foo` and `bar` are required if the
+/// branch matches.
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     ["a", "b"].iter().copied().map(String::from) =>
+///     "command [-h]" { positional: Option<(String, String)>, }
+///     [foo, bar] if positional.is_none() => {
+///         positional = Some((foo, bar));
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.positional, Some((String::from("a"), String::from("b"))));
+/// # Ok(()) }
+/// ```
+///
+/// ## Help documentation
 ///
 /// You specify documentation for switches and arguments using doc comments
 /// (e.g. `/// Hello World`). These are automatically wrapped to 80 characters.
+/// And is made available through a handful of local functions:
 ///
-/// > This makes use of the `print_help` generated function.
+/// * `write_help` - Which can write the help string to something implementing
+///   [std::io::Write].
+/// * `print_help` - Which will print the help string to [std::io::stdout].
+///
+/// > The following makes use of the `print_help` generated function.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -419,17 +465,20 @@ pub enum ErrorKind {
 ///
 /// We determine the initial indentation level from the first doc comment.
 /// Looking at the code above, this would be the line containing `Prints the
-/// help.`. We then wrap additional lines relative to this indentation.
+/// help.`. We then wrap additional lines relative to this level of indentation.
 ///
 /// We also determine the individual indentation level of a line by looking at
 /// all the non-alphanumerical character that prefixes that line. That's why the
 /// "overly long" markdown list bullet above wraps correctly. Instead of
-/// wrapping to the `*`, it wraps to the first character after it.
+/// wrapping at the `*`, it wraps to the first alphanumeric character after it.
 ///
-/// ## Parsing all available arguments using `#[rest]`
+/// ## Capture all available arguments using `#[rest]`
 ///
 /// You can write a branch that receives all available arguments using the
-/// `#[rest]` attribute with a single argument.
+/// `#[rest]` attribute. This can be done both with arguments to switches, and
+/// positional arguments.
+///
+/// The following showcases capturing using a positional argument:
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -439,7 +488,7 @@ pub enum ErrorKind {
 ///     "command [-h]" {
 ///         rest: Vec<String>,
 ///     }
-///     #[rest] args => {
+///     [#[rest] args] => {
 ///         rest = args;
 ///         Ok(())
 ///     }
@@ -449,7 +498,7 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// This also works for switches and secondary positional arguments.
+/// And the following through a switch:
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -463,21 +512,10 @@ pub enum ErrorKind {
 /// }?;
 ///
 /// assert_eq!(args.rest, &["foo", "bar", "baz"]);
-///
-/// let args = argwerk::parse! {
-///     vec!["first", "foo", "bar", "baz"].into_iter().map(String::from) =>
-///     "command [-h]" { rest: Vec<String>, }
-///     first, #[rest] args => {
-///         rest = args;
-///         Ok(())
-///     }
-/// }?;
-///
-/// assert_eq!(args.rest, &["foo", "bar", "baz"]);
 /// # Ok(()) }
 /// ```
 ///
-/// ## Parse optional arguments with `#[option]`
+/// ## Parsing optional arguments with `#[option]`
 ///
 /// Switches and positional arguments can be marked with the `#[option]`
 /// attribute. This will cause the argument to take a value of type
@@ -520,40 +558,6 @@ pub enum ErrorKind {
 /// let args = parser(&["--foo", "bar"])?;
 /// assert_eq!(args.foo.as_deref(), Some("bar"));
 /// assert!(!args.bar);
-/// # Ok(()) }
-/// ```
-///
-/// ## Parse positional arguments
-///
-/// Positional arguments are parsed by specifying a collection of bindings in
-/// the branch. Every individual binding supports the `#[rest]` and `#[option]`
-/// attributes.
-///
-/// The following is a basic example without attributes. Both `foo` and `bar`
-/// are required if the branch matches.
-///
-/// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     ["a", "b"].iter().copied().map(String::from) =>
-///     /// A simple test command.
-///     "command [-h]" {
-///         positional: Option<(String, String)>,
-///     }
-///     /// Takes argument at <foo> and <bar>.
-///     foo, bar if positional.is_none() => {
-///         positional = Some((foo, bar));
-///         Ok(())
-///     }
-/// }?;
-///
-/// assert_eq!(args.positional, Some((String::from("a"), String::from("b"))));
-/// # Ok(()) }
-/// ```
-///
-/// assert_eq!(args.first, "foo");
-/// assert_eq!(args.second.as_deref(), Some("bar"));
-/// assert_eq!(args.rest, &["baz"]);
 /// # Ok(()) }
 /// ```
 #[macro_export]
@@ -634,6 +638,27 @@ macro_rules! __parse_inner {
     }};
 
     // Parse the rest of the available arguments.
+    (@doc #[rest] $init:ident, $argument:ident) => {
+        $init.push_str("<");
+        $init.push_str(stringify!($argument));
+        $init.push_str("..>");
+    };
+
+    // Parse an optional argument.
+    (@doc #[option] $init:ident, $argument:ident) => {
+        $init.push_str("[");
+        $init.push_str(stringify!($argument));
+        $init.push_str("]");
+    };
+
+    // Parse as its argument.
+    (@doc $init:ident, $argument:ident) => {
+        $init.push_str("<");
+        $init.push_str(stringify!($argument));
+        $init.push_str(">");
+    };
+
+    // Parse the rest of the available arguments.
     (@positional #[rest] $it:ident, $arg:ident) => {
         (&mut $it).map(String::from).collect::<Vec<String>>();
     };
@@ -662,6 +687,21 @@ macro_rules! __parse_inner {
                 )
             )
         }
+    };
+
+    // Parse the rest of the available arguments.
+    (@first-positional #[rest] $argument:ident, $it:ident) => {
+        Some($argument).into_iter().chain(&mut $it).collect::<Vec<_>>();
+    };
+
+    // Parse an optional argument.
+    (@first-positional #[option] $argument:ident, $it:ident) => {
+        Some($argument)
+    };
+
+    // Parse as its argument.
+    (@first-positional $argument:ident, $it:ident) => {
+        $argument
     };
 
     // Test if `$n` is switch or not.
@@ -716,40 +756,20 @@ macro_rules! __parse_inner {
     (@help
         $help:ident,
         $(#[doc = $doc:literal])*
-        $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*
+        [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
         let init = $help.switch_init_mut();
 
-        init.push_str("  <");
-        init.push_str(stringify!($first));
-        init.push_str(">");
+        init.push_str("  ");
+
+        $crate::__parse_inner!(@doc $(#[$($first_meta)*])* init, $first);
 
         $(
-            init.push_str(" <");
-            init.push_str(stringify!($rest));
-            init.push_str(">");
+            init.push_str(" ");
+            $crate::__parse_inner!(@doc $(#[$($rest_meta)*])* init, $rest);
         )*
-
-        let docs = vec![$($doc,)*];
-        $help.switch(docs);
-
-        $crate::__parse_inner!(@help $help, $($tail)*);
-    }};
-
-    // Generate help for #[rest] bindings.
-    (@help
-        $help:ident,
-        $(#[doc = $doc:literal])*
-        #[rest] $binding:ident $(if $cond:expr)? => $block:block
-        $($tail:tt)*
-    ) => {{
-        let init = $help.switch_init_mut();
-
-        init.push_str("  <");
-        init.push_str(stringify!($binding));
-        init.push_str("..>");
 
         let docs = vec![$($doc,)*];
         $help.switch(docs);
@@ -776,9 +796,8 @@ macro_rules! __parse_inner {
         )*
 
         $(
-            init.push_str(" <");
-            init.push_str(stringify!($arg));
-            init.push('>');
+            init.push_str(" ");
+            $crate::__parse_inner!(@doc $(#[$($arg_meta)*])* init, $arg);
         )*
 
         let docs = vec![$($doc,)*];
@@ -800,44 +819,15 @@ macro_rules! __parse_inner {
     (@branch
         $switch:ident, $it:ident,
         $(#[doc = $doc:literal])*
-        $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*
+        [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
         if argwerk::__parse_inner!(@cond $($cond)*) {
             let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
 
-            let $first = $switch;
+            let $first = $crate::__parse_inner!(@first-positional $(#[$($first_meta)*])* $switch, $it);
             $(let $rest = $crate::__parse_inner!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
-
-            let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
-                $block
-            };
-
-            if let Err(error) = __argwerk_handle() {
-                return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                    name: __argwerk_name,
-                    error
-                }));
-            }
-
-            continue;
-        }
-
-        $crate::__parse_inner!(@branch $switch, $it, $($tail)*);
-    };
-
-    // Match the rest of the arguments
-    (@branch
-        $switch:ident, $it:ident,
-        $(#[doc = $doc:literal])*
-        #[rest] $binding:ident $(if $cond:expr)? => $block:block
-        $($tail:tt)*
-    ) => {
-        if argwerk::__parse_inner!(@cond $($cond)*) {
-            let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
-
-            let $binding = Some($switch).into_iter().chain((&mut $it)).collect::<Vec<_>>();
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                 $block
