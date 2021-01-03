@@ -16,11 +16,11 @@ For a more complete commandline parsing library, use [clap].
 
 > This is available as a runnable example:
 > ```sh
-> cargo run --example basic
+> cargo run --example tour
 > ```
 
 ```rust
-let args = argwerk::argwerk! {
+let args = argwerk::parse! {
     /// A simple test command.
     ///
     /// This is nice!
@@ -28,6 +28,8 @@ let args = argwerk::argwerk! {
         help: bool,
         file: Option<String>,
         limit: usize = 42,
+        positional: Option<(String, String)>,
+        rest: Vec<String>,
     }
     /// Print this help.
     "-h" | "--help" => {
@@ -45,12 +47,15 @@ let args = argwerk::argwerk! {
         file = Some(path);
         Ok(())
     }
+    /// Takes argument at <foo> and <bar>.
+    (foo, bar, #[rest] args) if positional.is_none() => {
+        positional = Some((foo.into(), bar.into()));
+        rest = args;
+        Ok(())
+    }
 }?;
 
-if args.help {
-    return Ok(());
-}
-
+dbg!(args);
 Ok(())
 ```
 

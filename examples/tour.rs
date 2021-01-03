@@ -1,5 +1,5 @@
 fn main() -> Result<(), argwerk::Error> {
-    let args = argwerk::argwerk! {
+    let args = argwerk::parse! {
         /// A simple test command.
         ///
         /// This is nice!
@@ -7,6 +7,8 @@ fn main() -> Result<(), argwerk::Error> {
             help: bool,
             file: Option<String>,
             limit: usize = 42,
+            positional: Option<(String, String)>,
+            rest: Vec<String>,
         }
         /// Print this help.
         "-h" | "--help" => {
@@ -24,11 +26,14 @@ fn main() -> Result<(), argwerk::Error> {
             file = Some(path);
             Ok(())
         }
+        /// Takes argument at <foo> and <bar>.
+        (foo, bar, #[rest] args) if positional.is_none() => {
+            positional = Some((foo.into(), bar.into()));
+            rest = args;
+            Ok(())
+        }
     }?;
 
-    if args.help {
-        return Ok(());
-    }
-
+    dbg!(args);
     Ok(())
 }

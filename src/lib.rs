@@ -14,12 +14,12 @@
 //!
 //! > This is available as a runnable example:
 //! > ```sh
-//! > cargo run --example basic
+//! > cargo run --example tour
 //! > ```
 //!
 //! ```rust
 //! # fn main() -> Result<(), argwerk::Error> {
-//! let args = argwerk::argwerk! {
+//! let args = argwerk::parse! {
 //!     /// A simple test command.
 //!     ///
 //!     /// This is nice!
@@ -27,6 +27,8 @@
 //!         help: bool,
 //!         file: Option<String>,
 //!         limit: usize = 42,
+//!         positional: Option<(String, String)>,
+//!         rest: Vec<String>,
 //!     }
 //!     /// Print this help.
 //!     "-h" | "--help" => {
@@ -44,12 +46,15 @@
 //!         file = Some(path);
 //!         Ok(())
 //!     }
+//!     /// Takes argument at <foo> and <bar>.
+//!     (foo, bar, #[rest] args) if positional.is_none() => {
+//!         positional = Some((foo.into(), bar.into()));
+//!         rest = args;
+//!         Ok(())
+//!     }
 //! }?;
 //!
-//! if args.help {
-//!     return Ok(());
-//! }
-//!
+//! dbg!(args);
 //! Ok(())
 //! # }
 //! ```
@@ -62,36 +67,18 @@ use std::error;
 use std::fmt;
 
 /// Helper utility for building documentation.
-pub struct Doc<'a> {
-    initial: &'a str,
-    subsequent: &'a str,
-    docs: Vec<&'static str>,
+pub fn doc<'a>(initial: &'a str, docs: &'a [&'static str]) -> impl fmt::Display + 'a {
+    Doc { initial, docs }
 }
 
-impl<'a> Doc<'a> {
-    /// Construct a new doc builder.
-    pub fn new(initial: &'a str, subsequent: &'a str) -> Self {
-        Self {
-            initial: initial.into(),
-            subsequent: subsequent.into(),
-            docs: Vec::new(),
-        }
-    }
-
-    /// Test if documentation helper is empty.
-    pub fn is_empty(&self) -> bool {
-        self.docs.is_empty()
-    }
-
-    /// Push a line of documentation.
-    pub fn push(&mut self, s: &'static str) {
-        self.docs.push(s);
-    }
+struct Doc<'a> {
+    initial: &'a str,
+    docs: &'a [&'static str],
 }
 
 impl fmt::Display for Doc<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        textwrap(f, &self.docs, 80, &self.initial, &self.subsequent)?;
+        textwrap(f, self.docs, 80, &self.initial)?;
         Ok(())
     }
 }
@@ -120,6 +107,9 @@ impl fmt::Display for Error {
                     "missing parameter to argument `{}`: <{}>",
                     argument, name
                 )
+            }
+            ErrorKind::MissingPositional { name } => {
+                write!(f, "missing positional parameter <{}>", name)
             }
             ErrorKind::Unsupported { argument } => {
                 write!(f, "unsupported argument `{}`", argument)
@@ -156,6 +146,11 @@ pub enum ErrorKind {
         /// The parameter that was missing, like `path` in `--file <path>`.
         name: &'static str,
     },
+    /// When a positional parameter is missing.
+    MissingPositional {
+        /// The parameter that was missing, like `path` in `<path>`.
+        name: &'static str,
+    },
     /// When an error has been raised while processing an argument, typically
     /// when something is being parsed.
     Error {
@@ -183,11 +178,132 @@ pub enum ErrorKind {
 ///
 /// These are only available in the scope of the matching branches.
 ///
+/// # Arguments
+///
+/// The first part of the [parse] macro defines the state available to the
+/// parser. These are field-like declarations which can specify a default value.
+///
+/// This is the only required component of the macro.
+///
+/// Fields which do not specify an initialization value will be initialized
+/// through [Default::default].
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         help: bool,
+///         limit: usize = 10,
+///     }
+/// }?;
+///
+/// assert_eq!(args.help, false);
+/// assert_eq!(args.limit, 10);
+/// # Ok(()) }
+/// ```
+///
+/// # Argument branches
+///
+/// The basic form of an argument branch is:
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     vec![String::from("-h")] =>
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         help: bool,
+///     }
+///     /// Print the help.
+///     "-h" | "--help" => {
+///         help = true;
+///         print_help();
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.help, true);
+/// # Ok(()) }
+/// ```
+///
+/// # Parse the rest of available arguments
+///
+/// You can write a branch that receives the rest of the arguments using the
+/// `#[rest]` attribute.
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     vec![String::from("foo"), String::from("bar"), String::from("baz")] =>
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         rest: Vec<String>,
+///     }
+///     #[rest] args => {
+///         rest = args;
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.rest, &["foo", "bar", "baz"]);
+/// # Ok(()) }
+/// ```
+///
+/// It's also possible to annotate a positional argument with `#[rest]`.
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     vec![String::from("foo"), String::from("bar"), String::from("baz")] =>
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         first: Option<String>,
+///         rest: Vec<String>,
+///     }
+///     (a, #[rest] args) => {
+///         first = Some(a);
+///         rest = args;
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.first.as_deref(), Some("foo"));
+/// assert_eq!(args.rest, &["bar", "baz"]);
+/// # Ok(()) }
+/// ```
+///
+/// # Parse position arguments.
+///
+/// You can write a branch that receives the rest of the arguments using the
+/// `#[rest]` attribute.
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     ["a", "b"].iter().copied() =>
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         positional: Option<(String, String)>,
+///     }
+///     /// Takes argument at <foo> and <bar>.
+///     (foo, bar) if positional.is_none() => {
+///         positional = Some((foo.into(), bar.into()));
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.positional, Some((String::from("a"), String::from("b"))));
+/// # Ok(()) }
+/// ```
+///
+/// This will consume the rest of the arguments.
+///
 /// # Examples
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::argwerk! {
+/// let args = argwerk::parse! {
 ///     /// A simple test command.
 ///     ///
 ///     /// This is nice!
@@ -217,15 +333,37 @@ pub enum ErrorKind {
 /// # }
 /// ```
 #[macro_export]
-macro_rules! argwerk {
+macro_rules! parse {
+    // Parse with a custom iterator.
     (
-        $(#[$($usage_meta:tt)*])*
-        $usage:literal $({
+        $it:expr => $($rest:tt)*
+    ) => {{
+        let mut __argwerk_it = ::std::iter::IntoIterator::into_iter($it);
+        $crate::__parse_inner!(__argwerk_it, $($rest)*)
+    }};
+
+    // Parse with `std::env::args()`.
+    (
+        $($rest:tt)*
+    ) => {{
+        let mut __argwerk_it = ::std::env::args();
+        __argwerk_it.next();
+        $crate::__parse_inner!(__argwerk_it, $($rest)*)
+    }};
+}
+
+/// Internal implementation details of the [parse] macro.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __parse_inner {
+    // The guts of the parser.
+    (
+        $it:ident,
+        $(#[doc = $doc:literal])*
+        $usage:literal {
             $($field:ident : $ty:ty $(= $expr:expr)?),* $(,)?
-        })? $(
-            $(#[$($meta:tt)*])*
-            $first:literal $(| $rest:literal)* $(, $arg:ident)* $(if $cond:expr)? => $block:block
-        )*
+        }
+        $($tt:tt)*
     ) => {{
         let mut parser = || {
             fn write_help(mut w: impl ::std::io::Write) -> ::std::io::Result<()> {
@@ -233,42 +371,15 @@ macro_rules! argwerk {
 
                 writeln!(w, "Usage: {name}", name = $usage)?;
 
-                let mut doc = $crate::Doc::new("", "");
-                $($crate::argwerk!(@doc #[$($usage_meta)*] doc);)*
+                let docs = vec![$($doc,)*];
 
-                if !doc.is_empty() {
-                    writeln!(w, "{}", doc)?;
+                if !docs.is_empty() {
+                    writeln!(w, "{}", $crate::doc("", &docs))?;
                 }
 
                 writeln!(w)?;
-
                 let mut prefix = String::new();
-
-                $(
-                prefix.clear();
-                prefix.push_str("  ");
-                prefix.push_str($first);
-
-                $(
-                    prefix.push_str(", ");
-                    prefix.push_str($rest);
-                )*
-
-                $(
-                    prefix.push_str(" <");
-                    prefix.push_str(stringify!($arg));
-                    prefix.push('>');
-                )*
-
-                prefix.push_str(" - ");
-
-                let subsequent = ::std::iter::repeat(' ').take(prefix.len()).collect::<String>();
-
-                let mut doc = $crate::Doc::new(&prefix, &subsequent);
-                $($crate::argwerk!(@doc #[$($meta)*] doc);)*
-                writeln!(w, "{}", doc)?;
-                )*
-
+                $crate::__parse_inner!(@help w, prefix, $($tt)*);
                 Ok(())
             }
 
@@ -278,87 +389,263 @@ macro_rules! argwerk {
                 write_help(out).expect("writing to stdout failed");
             }
 
-            struct Args {
-                $($($field: $ty,)*)*
+            $($crate::__parse_inner!(@field $field, $ty $(= $expr)*);)*
+
+            while let Some(__argwerk_arg) = $it.next() {
+                $crate::__parse_inner!(@branch __argwerk_arg, $it, $($tt)*);
+
+                return Err(::argwerk::Error::new(::argwerk::ErrorKind::Unsupported {
+                    argument: __argwerk_arg.into()
+                }));
             }
 
-            $(
-                $($crate::argwerk!(@decl $field, $ty $(, $expr)*);)*
-            )*
-
-            let mut __argwerk__it = ::std::env::args();
-            __argwerk__it.next();
-
-            while let Some(arg) = __argwerk__it.next() {
-                match arg.as_str() {
-                    $($first $( | $rest)* $(if $cond)* => {
-                        $(
-                            let $arg = match __argwerk__it.next() {
-                                Some($arg) => $arg,
-                                None => return Err(
-                                    ::argwerk::Error::new(
-                                        ::argwerk::ErrorKind::MissingParameter {
-                                            argument: arg.into(),
-                                            name: stringify!($arg),
-                                        }
-                                    )
-                                ),
-                            };
-                        )*
-
-                        let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
-                            $block
-                        };
-
-                        if let Err(error) = __argwerk_handle() {
-                            return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                                argument: arg.into(),
-                                error
-                            }));
-                        }
-                    })*
-                    other => {
-                        return Err(::argwerk::Error::new(::argwerk::ErrorKind::Unsupported {
-                            argument: other.into()
-                        }));
-                    }
-                }
-            }
+            #[derive(Debug)]
+            struct Args { $($field: $ty,)* }
 
             Ok(Args {
-                $($($field,)*)*
+                $($field,)*
             })
         };
 
         parser()
     }};
 
-    // Matching doc comments to add to the document formatter.
-    (@doc #[doc = $doc:literal] $out:ident) => {
-        $out.push($doc);
+    // Parse the rest of the arguments.
+    (@positional $it:ident, $arg:ident) => {
+        match $it.next() {
+            Some($arg) => $arg,
+            None => return Err(
+                ::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingPositional {
+                        name: stringify!($arg),
+                    }
+                )
+            )
+        }
     };
 
-    // Catch-all for filtering out non-relevant doc additions.
-    (@doc #[$meta:meta] $out:ident) => {
+    // Try to parse an argument to a parameter.
+    (@argument $argument:ident, $it:ident, $arg:ident) => {
+        match $it.next() {
+            Some($arg) => $arg,
+            None => return Err(
+                ::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingParameter {
+                        argument: std::convert::AsRef::<str>::as_ref(&$argument).into(),
+                        name: stringify!($arg),
+                    }
+                )
+            ),
+        }
     };
 
-    (@decl $field:ident, $ty:ty) => {
+    (@field $field:ident, $ty:ty) => {
         let mut $field: $ty = Default::default();
     };
 
-    (@decl $field:ident, $ty:ty, $expr:expr) => {
+    (@field $field:ident, $ty:ty = $expr:expr) => {
         let mut $field: $ty = $expr;
+    };
+
+    // Empty help generator.
+    (@help $w:ident, $prefix:ident,) => {};
+
+    // Generate help for positional parameters.
+    (@help
+        $w:ident,
+        $prefix:ident,
+        $(#[doc = $doc:literal])*
+        ($first:ident $(, $rest:ident)* $(, #[rest] $last:ident)?)
+        $(if $cond:expr)? => $block:block
+        $($tail:tt)*
+    ) => {{
+        $prefix.clear();
+
+        $prefix.push_str("  <");
+        $prefix.push_str(stringify!($first));
+        $prefix.push_str(">");
+
+        $(
+            $prefix.push_str(" <");
+            $prefix.push_str(stringify!($rest));
+            $prefix.push_str(">");
+        )*
+
+        let docs = vec![$($doc,)*];
+
+        if !docs.is_empty() {
+            $prefix.push_str(" - ");
+            writeln!($w, "{}", $crate::doc(&$prefix, &docs))?;
+        } else {
+            writeln!($w, "{}", $prefix)?;
+        }
+
+        $crate::__parse_inner!(@help $w, $prefix, $($tail)*);
+    }};
+
+    // Generate help for #[rest] bindings.
+    (@help
+        $w:ident,
+        $prefix:ident,
+        $(#[doc = $doc:literal])*
+        #[rest] $binding:ident $(if $cond:expr)? => $block:block
+        $($tail:tt)*
+    ) => {{
+        $prefix.clear();
+        $prefix.push_str("  <");
+        $prefix.push_str(stringify!($binding));
+        $prefix.push_str("..>");
+
+        let docs = vec![$($doc,)*];
+
+        if !docs.is_empty() {
+            $prefix.push_str(" - ");
+            writeln!($w, "{}", $crate::doc(&$prefix, &docs))?;
+        } else {
+            writeln!($w, "{}", $prefix)?;
+        }
+
+        $crate::__parse_inner!(@help $w, $prefix, $($tail)*);
+    }};
+
+    // A branch in a help generator.
+    (@help
+        $w:ident,
+        $prefix:ident,
+        $(#[doc = $doc:literal])*
+        $first:literal $(| $rest:literal)* $(, $arg:ident)* $(if $cond:expr)? => $block:block
+        $($tail:tt)*
+    ) => {{
+        $prefix.clear();
+        $prefix.push_str("  ");
+        $prefix.push_str($first);
+
+        $(
+            $prefix.push_str(", ");
+            $prefix.push_str($rest);
+        )*
+
+        $(
+            $prefix.push_str(" <");
+            $prefix.push_str(stringify!($arg));
+            $prefix.push('>');
+        )*
+
+        let docs = vec![$($doc,)*];
+
+        if !docs.is_empty() {
+            $prefix.push_str(" - ");
+            writeln!($w, "{}", $crate::doc(&$prefix, &docs))?;
+        } else {
+            writeln!($w, "{}", $prefix)?;
+        }
+
+        $crate::__parse_inner!(@help $w, $prefix, $($tail)*);
+    }};
+
+    // The empty condition.
+    (@cond) => { true };
+
+    // An expression condition.
+    (@cond $expr:expr) => { $expr };
+
+    // Empty branch expansion.
+    (@branch $arg:ident, $it:ident,) => {};
+
+    // Match positional arguments.
+    (@branch
+        $argument:ident, $it:ident,
+        $(#[doc = $doc:literal])*
+        ($first:ident $(, $rest:ident)* $(, #[rest] $last:ident)?)
+        $(if $cond:expr)? => $block:block
+        $($tail:tt)*
+    ) => {
+        if argwerk::__parse_inner!(@cond $($cond)*) {
+            let __argwerk_error_argument = std::convert::AsRef::<str>::as_ref(&$argument).into();
+
+            let $first = $argument;
+            $(let $rest = $crate::__parse_inner!(@positional $it, $rest);)*
+            $(let $last = (&mut $it).map(String::from).collect::<Vec<String>>();)*
+
+            let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
+                $block
+            };
+
+            if let Err(error) = __argwerk_handle() {
+                return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
+                    argument: __argwerk_error_argument,
+                    error
+                }));
+            }
+
+            continue;
+        }
+
+        $crate::__parse_inner!(@branch $argument, $it, $($tail)*);
+    };
+
+    // Match the rest of the arguments
+    (@branch
+        $argument:ident, $it:ident,
+        $(#[doc = $doc:literal])*
+        #[rest] $binding:ident $(if $cond:expr)? => $block:block
+        $($tail:tt)*
+    ) => {
+        if argwerk::__parse_inner!(@cond $($cond)*) {
+            let __argwerk_error_argument = std::convert::AsRef::<str>::as_ref(&$argument).into();
+
+            let $binding = Some($argument).into_iter().chain((&mut $it)).collect::<Vec<_>>();
+
+            let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
+                $block
+            };
+
+            if let Err(error) = __argwerk_handle() {
+                return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
+                    argument: __argwerk_error_argument,
+                    error
+                }));
+            }
+
+            continue;
+        }
+
+        $crate::__parse_inner!(@branch $argument, $it, $($tail)*);
+    };
+
+    // A single branch expansion.
+    (@branch
+        $argument:ident, $it:ident,
+        $(#[$($meta:tt)*])*
+        $first:literal $(| $rest:literal)* $(, $arg:ident)* $(if $cond:expr)? => $block:block
+        $($tail:tt)*
+    ) => {
+        match std::convert::AsRef::<str>::as_ref(&$argument) {
+            $first $( | $rest)* $(if $cond)* => {
+                $(let $arg = $crate::__parse_inner!(@argument $argument, $it, $arg);)*
+
+                let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
+                    $block
+                };
+
+                if let Err(error) = __argwerk_handle() {
+                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
+                        argument: std::convert::AsRef::<str>::as_ref(&$argument).into(),
+                        error
+                    }));
+                }
+
+                continue;
+            }
+            _ => (),
+        }
+
+        $crate::__parse_inner!(@branch $argument, $it, $($tail)*);
     };
 }
 
 /// Utility for the bytewise wrapping of text.
-fn textwrap<I>(
-    f: &mut fmt::Formatter<'_>,
-    lines: I,
-    width: usize,
-    initial: &str,
-    subsequent: &str,
-) -> fmt::Result
+fn textwrap<I>(f: &mut fmt::Formatter<'_>, lines: I, width: usize, initial: &str) -> fmt::Result
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
@@ -370,12 +657,6 @@ where
         let mut line = line.as_ref().trim();
 
         loop {
-            let pfx = if std::mem::take(&mut first) {
-                initial
-            } else {
-                subsequent
-            };
-
             let mut col = 0;
 
             while !line.is_empty() {
@@ -387,14 +668,20 @@ where
                     }
                 };
 
-                if new + pfx.len() > width {
+                if new + initial.len() > width {
                     break;
                 }
 
                 col = new;
             }
 
-            f.write_str(pfx)?;
+            if std::mem::take(&mut first) {
+                f.write_str(initial)?;
+            } else {
+                for c in std::iter::repeat(' ').take(initial.len()) {
+                    write!(f, "{}", c)?;
+                }
+            };
 
             if col > 0 {
                 f.write_str(&line[..(col - 1)])?;
