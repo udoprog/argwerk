@@ -164,8 +164,8 @@ pub enum ErrorKind {
     /// # fn main() -> Result<(), argwerk::Error> {
     /// let error = argwerk::parse! {
     ///     vec!["bar"] => "command [-h]" { }
-    ///     // This errors because `b` is a required argument, but we only have
-    ///     // one.
+    ///     // This errors because `bar` is not a supported switch, nor do we
+    ///     // match any positional arguments.
     ///     "--file", arg => { Ok(()) }
     /// }.unwrap_err();
     ///
@@ -187,8 +187,8 @@ pub enum ErrorKind {
     /// # fn main() -> Result<(), argwerk::Error> {
     /// let error = argwerk::parse! {
     ///     vec!["--path"] => "command [-h]" { }
-    ///     // This errors because `b` is a required argument, but we only have
-    ///     // one.
+    ///     // This errors because `--path` is not a supported switch. But
+    ///     // `"--file"` is.
     ///     "--file", arg => { Ok(()) }
     /// }.unwrap_err();
     ///
@@ -207,9 +207,9 @@ pub enum ErrorKind {
     /// # fn main() -> Result<(), argwerk::Error> {
     /// let error = argwerk::parse! {
     ///     vec!["--file"] => "command [-h]" { }
-    ///     // This errors because `b` is a required argument, but we only have
-    ///     // one.
-    ///     "--file", arg => { Ok(()) }
+    ///     // This errors because `--file` requires an argument `path`, but
+    ///     // that is not provided.
+    ///     "--file", path => { Ok(()) }
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingSwitchArgument { .. }));
@@ -231,7 +231,7 @@ pub enum ErrorKind {
     /// let error = argwerk::parse! {
     ///     vec!["foo"] => "command [-h]" { }
     ///     // This errors because `b` is a required argument, but we only have
-    ///     // one.
+    ///     // one which matches `a`.
     ///     [a, b] => { Ok(()) }
     /// }.unwrap_err();
     ///
@@ -251,6 +251,7 @@ pub enum ErrorKind {
     /// # fn main() -> Result<(), argwerk::Error> {
     /// let error = argwerk::parse! {
     ///     vec!["foo"] => "command [-h]" { }
+    ///     // This errors because we raise an error in the branch body.
     ///     "foo" => {
     ///         Err("something went wrong".into())
     ///     }
