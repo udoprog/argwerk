@@ -112,26 +112,30 @@ impl Error {
             kind: Box::new(kind),
         }
     }
+
+    /// Access the underlying error kind.
+    pub fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind.as_ref() {
-            ErrorKind::MissingParameter { argument, name } => {
-                write!(
-                    f,
-                    "missing parameter to argument `{}`: <{}>",
-                    argument, name
-                )
-            }
-            ErrorKind::MissingPositional { name } => {
-                write!(f, "missing positional parameter <{}>", name)
-            }
-            ErrorKind::Unsupported { argument } => {
+            ErrorKind::UnsupportedArgument { argument } => {
                 write!(f, "unsupported argument `{}`", argument)
             }
-            ErrorKind::Error { argument, error } => {
-                write!(f, "bad argument `{}`: {}", argument, error)
+            ErrorKind::UnsupportedSwitch { switch } => {
+                write!(f, "unsupported switch `{}`", switch)
+            }
+            ErrorKind::MissingSwitchArgument { switch, argument } => {
+                write!(f, "switch `{}` missing argument `{}`", switch, argument,)
+            }
+            ErrorKind::MissingPositional { name } => {
+                write!(f, "missing argument `{}`", name)
+            }
+            ErrorKind::Error { name, error } => {
+                write!(f, "error in argument `{}`: {}", name, error)
             }
         }
     }
@@ -149,29 +153,115 @@ impl error::Error for Error {
 /// The kind of an error.
 #[derive(Debug)]
 pub enum ErrorKind {
-    /// An argument that is unsupported.
-    Unsupported {
-        /// An unsupported argument.
+    /// Encountered an argument that was not supported.
+    ///
+    /// An unsupported argument is triggered when none of the branches in the
+    /// parser matches the current agument.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = argwerk::parse! {
+    ///     vec!["bar"] => "command [-h]" { }
+    ///     // This errors because `b` is a required argument, but we only have
+    ///     // one.
+    ///     "--file", arg => { Ok(()) }
+    /// }.unwrap_err();
+    ///
+    /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedArgument { .. }));
+    /// # Ok(()) }
+    /// ```
+    UnsupportedArgument {
+        /// The name of the unsupported argument.
         argument: Box<str>,
+    },
+    /// Encountered a switch that was not supported.
+    ///
+    /// An unsupported switch is caused by the same reason as an unsupported
+    /// argument, but it's prefixed with a hyphen `-`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = argwerk::parse! {
+    ///     vec!["--path"] => "command [-h]" { }
+    ///     // This errors because `b` is a required argument, but we only have
+    ///     // one.
+    ///     "--file", arg => { Ok(()) }
+    /// }.unwrap_err();
+    ///
+    /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedSwitch { .. }));
+    /// # Ok(()) }
+    /// ```
+    UnsupportedSwitch {
+        /// The name of the unsupported switch.
+        switch: Box<str>,
     },
     /// When a parameter to an argument is missing.
-    MissingParameter {
-        /// The argument where the named argument was missing, like `--file` in
-        /// `--file <path>`.
-        argument: Box<str>,
-        /// The parameter that was missing, like `path` in `--file <path>`.
-        name: &'static str,
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = argwerk::parse! {
+    ///     vec!["--file"] => "command [-h]" { }
+    ///     // This errors because `b` is a required argument, but we only have
+    ///     // one.
+    ///     "--file", arg => { Ok(()) }
+    /// }.unwrap_err();
+    ///
+    /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingSwitchArgument { .. }));
+    /// # Ok(()) }
+    /// ```
+    MissingSwitchArgument {
+        /// The switch where the argument was missing, like `--file` in `--file
+        /// <path>`.
+        switch: Box<str>,
+        /// The argument that was missing, like `path` in `--file <path>`.
+        argument: &'static str,
     },
-    /// When a positional parameter is missing.
+    /// When a positional argument is missing.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = argwerk::parse! {
+    ///     vec!["foo"] => "command [-h]" { }
+    ///     // This errors because `b` is a required argument, but we only have
+    ///     // one.
+    ///     (a, b) => { Ok(()) }
+    /// }.unwrap_err();
+    ///
+    /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingPositional { .. }));
+    /// # Ok(()) }
+    /// ```
     MissingPositional {
-        /// The parameter that was missing, like `path` in `<path>`.
+        /// The name of the argument missing like `path` in `<path>`.
         name: &'static str,
     },
     /// When an error has been raised while processing an argument, typically
     /// when something is being parsed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = argwerk::parse! {
+    ///     vec!["foo"] => "command [-h]" { }
+    ///     "foo" => {
+    ///         Err("something went wrong".into())
+    ///     }
+    /// }.unwrap_err();
+    ///
+    /// assert!(matches!(error.kind(), argwerk::ErrorKind::Error { .. }));
+    /// # Ok(()) }
+    /// ```
     Error {
-        /// The argument that could not be parsed.
-        argument: Box<str>,
+        /// The name of the switch or positional that couldn't be processed.
+        name: Box<str>,
         /// The error that caused the parsing error.
         error: Box<dyn error::Error + Send + Sync + 'static>,
     },
@@ -514,9 +604,15 @@ macro_rules! __parse_inner {
             while let Some(__argwerk_arg) = $it.next() {
                 $crate::__parse_inner!(@branch __argwerk_arg, $it, $($tt)*);
 
-                return Err(::argwerk::Error::new(::argwerk::ErrorKind::Unsupported {
-                    argument: __argwerk_arg.into()
-                }));
+                if $crate::__parse_inner!(@is-switch &__argwerk_arg) {
+                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
+                        switch: __argwerk_arg.into()
+                    }));
+                } else {
+                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
+                        argument: __argwerk_arg.into()
+                    }));
+                }
             }
 
             #[derive(Debug)]
@@ -561,28 +657,28 @@ macro_rules! __parse_inner {
         }
     };
 
+    // Test if `$n` is switch or not.
+    (@is-switch $n:expr) => {
+        std::convert::AsRef::<str>::as_ref($n).starts_with('-')
+    };
+
     // Try to parse an argument to a parameter.
-    (@argument $argument:ident, $it:ident, $arg:ident) => {
+    (@switch-argument $switch:ident, $it:ident, $argument:ident) => {
         match $it.next() {
-            Some($arg) => $arg,
+            Some($argument) => $argument,
             None => return Err(
                 ::argwerk::Error::new(
-                    ::argwerk::ErrorKind::MissingParameter {
-                        argument: std::convert::AsRef::<str>::as_ref(&$argument).into(),
-                        name: stringify!($arg),
+                    ::argwerk::ErrorKind::MissingSwitchArgument {
+                        switch: std::convert::AsRef::<str>::as_ref(&$switch).into(),
+                        argument: stringify!($argument),
                     }
                 )
             ),
         }
     };
 
-    // Test if `$n` is switch or not.
-    (@is-switch $n:ident) => {
-        std::convert::AsRef::<str>::as_ref($n).starts_with('-')
-    };
-
     // Parse an optional argument.
-    (@argument #[option] $argument:ident, $it:ident, $arg:ident) => {
+    (@switch-argument #[option] $argument:ident, $it:ident, $arg:ident) => {
         match $it.peek() {
             Some(n) => if !$crate::__parse_inner!(@is-switch n) {
                 $it.next()
@@ -690,16 +786,16 @@ macro_rules! __parse_inner {
 
     // Match positional arguments.
     (@branch
-        $argument:ident, $it:ident,
+        $switch:ident, $it:ident,
         $(#[doc = $doc:literal])*
         ($first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*)
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
         if argwerk::__parse_inner!(@cond $($cond)*) {
-            let __argwerk_error_argument = std::convert::AsRef::<str>::as_ref(&$argument).into();
+            let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
 
-            let $first = $argument;
+            let $first = $switch;
             $(let $rest = $crate::__parse_inner!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
@@ -708,7 +804,7 @@ macro_rules! __parse_inner {
 
             if let Err(error) = __argwerk_handle() {
                 return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                    argument: __argwerk_error_argument,
+                    name: __argwerk_name,
                     error
                 }));
             }
@@ -716,20 +812,20 @@ macro_rules! __parse_inner {
             continue;
         }
 
-        $crate::__parse_inner!(@branch $argument, $it, $($tail)*);
+        $crate::__parse_inner!(@branch $switch, $it, $($tail)*);
     };
 
     // Match the rest of the arguments
     (@branch
-        $argument:ident, $it:ident,
+        $switch:ident, $it:ident,
         $(#[doc = $doc:literal])*
         #[rest] $binding:ident $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
         if argwerk::__parse_inner!(@cond $($cond)*) {
-            let __argwerk_error_argument = std::convert::AsRef::<str>::as_ref(&$argument).into();
+            let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
 
-            let $binding = Some($argument).into_iter().chain((&mut $it)).collect::<Vec<_>>();
+            let $binding = Some($switch).into_iter().chain((&mut $it)).collect::<Vec<_>>();
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                 $block
@@ -737,7 +833,7 @@ macro_rules! __parse_inner {
 
             if let Err(error) = __argwerk_handle() {
                 return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                    argument: __argwerk_error_argument,
+                    name: __argwerk_name,
                     error
                 }));
             }
@@ -745,19 +841,19 @@ macro_rules! __parse_inner {
             continue;
         }
 
-        $crate::__parse_inner!(@branch $argument, $it, $($tail)*);
+        $crate::__parse_inner!(@branch $switch, $it, $($tail)*);
     };
 
     // A single branch expansion.
     (@branch
-        $argument:ident, $it:ident,
+        $switch:ident, $it:ident,
         $(#[$($meta:tt)*])*
         $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
-        match std::convert::AsRef::<str>::as_ref(&$argument) {
+        match std::convert::AsRef::<str>::as_ref(&$switch) {
             $first $( | $rest)* $(if $cond)* => {
-                $(let $arg = $crate::__parse_inner!(@argument $(#[$($arg_meta)*])* $argument, $it, $arg);)*
+                $(let $arg = $crate::__parse_inner!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
 
                 let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                     $block
@@ -765,7 +861,7 @@ macro_rules! __parse_inner {
 
                 if let Err(error) = __argwerk_handle() {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                        argument: std::convert::AsRef::<str>::as_ref(&$argument).into(),
+                        name: std::convert::AsRef::<str>::as_ref(&$switch).into(),
                         error
                     }));
                 }
@@ -775,6 +871,6 @@ macro_rules! __parse_inner {
             _ => (),
         }
 
-        $crate::__parse_inner!(@branch $argument, $it, $($tail)*);
+        $crate::__parse_inner!(@branch $switch, $it, $($tail)*);
     };
 }

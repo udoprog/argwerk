@@ -36,10 +36,8 @@ See the documentation for [argwerk::parse!] for how to use.
 
 ```rust
 let args = argwerk::parse! {
-    /// A simple test command.
-    ///
-    /// This is nice!
-    "command [-h]" {
+    /// A command touring the capabilities of argwerk.
+    "tour [-h]" {
         help: bool,
         file: Option<String>,
         input: Option<String>,
