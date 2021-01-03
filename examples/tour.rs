@@ -38,7 +38,7 @@ fn main() -> Result<(), argwerk::Error> {
         /// Takes argument at <foo> and <bar>.
         ///
         ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
-        (foo, #[option] bar, #[rest] args) if positional.is_none() => {
+        foo, #[option] bar, #[rest] args if positional.is_none() => {
             positional = Some((foo, bar));
             rest = args;
             Ok(())

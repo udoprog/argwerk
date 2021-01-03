@@ -73,7 +73,7 @@
 //!     /// Takes argument at <foo> and <bar>.
 //!     ///
 //!     ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
-//!     (foo, #[option] bar, #[rest] args) if positional.is_none() => {
+//!     foo, #[option] bar, #[rest] args if positional.is_none() => {
 //!         positional = Some((foo, bar));
 //!         rest = args;
 //!         Ok(())
@@ -232,7 +232,7 @@ pub enum ErrorKind {
     ///     vec!["foo"] => "command [-h]" { }
     ///     // This errors because `b` is a required argument, but we only have
     ///     // one.
-    ///     (a, b) => { Ok(()) }
+    ///     a, b => { Ok(()) }
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingPositional { .. }));
@@ -311,7 +311,7 @@ pub enum ErrorKind {
 ///         limit: usize = 10,
 ///         positional: Option<(&'static str, &'static str, &'static str)>,
 ///     }
-///     (a, b, c) => {
+///     a, b, c => {
 ///         positional = Some((a, b, c));
 ///         Ok(())
 ///     }
@@ -369,15 +369,16 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// ## Documentation
+/// ## Switch documentation
 ///
-/// You specify documentation for argument branches with doc comments. These are
-/// automatically wrapped to 80 characters and pretty printed.
+/// You specify documentation for switches and arguments using doc comments
+/// (e.g. `/// Hello World`). These are automatically wrapped to 80 characters.
+///
+/// > This makes use of the `print_help` generated function.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
-///     vec![String::from("-h")] =>
 ///     /// A simple test command.
 ///     "command [-h]" {
 ///         help: bool,
@@ -398,7 +399,7 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// This would print:
+/// Invoking this with `-h` would print:
 ///
 /// ```text
 /// Usage: command [-h]
@@ -416,22 +417,24 @@ pub enum ErrorKind {
 ///                    support wrapping comments which are overly long.
 /// ```
 ///
-/// We determine the initial indentation level from the first doc comment. Above
-/// this would be "Prints the help.".
+/// We determine the initial indentation level from the first doc comment.
+/// Looking at the code above, this would be the line containing `Prints the
+/// help.`. We then wrap additional lines relative to this indentation.
 ///
-/// When we wrap individual lines, we determine the indentation level to use by
-/// finding the first alphanumerical character on the previous line. This is why
-/// the "overly long comment" above wraps correctly in the markdown list.
+/// We also determine the individual indentation level of a line by looking at
+/// all the non-alphanumerical character that prefixes that line. That's why the
+/// "overly long" markdown list bullet above wraps correctly. Instead of
+/// wrapping to the `*`, it wraps to the first character after it.
 ///
-/// ## Parse all available arguments with `#[rest]`
+/// ## Parsing all available arguments using `#[rest]`
 ///
-/// You can write a branch that receives the rest of the arguments using the
-/// `#[rest]` attribute.
+/// You can write a branch that receives all available arguments using the
+/// `#[rest]` attribute with a single argument.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
-///     vec![String::from("foo"), String::from("bar"), String::from("baz")] =>
+///     vec!["foo", "bar", "baz"].into_iter().map(String::from) =>
 ///     /// A simple test command.
 ///     "command [-h]" {
 ///         rest: Vec<String>,
@@ -446,11 +449,39 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
+/// This also works for switches and secondary positional arguments.
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     vec!["--test", "foo", "bar", "baz"].into_iter().map(String::from) =>
+///     "command [-h]" { rest: Vec<String>, }
+///     "--test", #[rest] args => {
+///         rest = args;
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.rest, &["foo", "bar", "baz"]);
+///
+/// let args = argwerk::parse! {
+///     vec!["first", "foo", "bar", "baz"].into_iter().map(String::from) =>
+///     "command [-h]" { rest: Vec<String>, }
+///     first, #[rest] args => {
+///         rest = args;
+///         Ok(())
+///     }
+/// }?;
+///
+/// assert_eq!(args.rest, &["foo", "bar", "baz"]);
+/// # Ok(()) }
+/// ```
+///
 /// ## Parse optional arguments with `#[option]`
 ///
 /// Switches and positional arguments can be marked with the `#[option]`
 /// attribute. This will cause the argument to take a value of type
-/// `Option<I::Item>`.
+/// `Option<I::Item>` where `I` represents the iterator that is being parsed.
 ///
 /// An optional argument parses to `None` if:
 /// * There are no more arguments to parse.
@@ -494,12 +525,9 @@ pub enum ErrorKind {
 ///
 /// ## Parse positional arguments
 ///
-/// Positional arguments are parsed by specifying a tuple in the match branch.
-///
-/// Positional arguments support the following attributes:
-/// * `#[option]` - which will cause the argument to be optionally parsed into
-///   an `Option<I::Item>`.
-/// * `#[rest]` - which will parse the rest of the arguments.
+/// Positional arguments are parsed by specifying a collection of bindings in
+/// the branch. Every individual binding supports the `#[rest]` and `#[option]`
+/// attributes.
 ///
 /// The following is a basic example without attributes. Both `foo` and `bar`
 /// are required if the branch matches.
@@ -513,7 +541,7 @@ pub enum ErrorKind {
 ///         positional: Option<(String, String)>,
 ///     }
 ///     /// Takes argument at <foo> and <bar>.
-///     (foo, bar) if positional.is_none() => {
+///     foo, bar if positional.is_none() => {
 ///         positional = Some((foo, bar));
 ///         Ok(())
 ///     }
@@ -522,27 +550,6 @@ pub enum ErrorKind {
 /// assert_eq!(args.positional, Some((String::from("a"), String::from("b"))));
 /// # Ok(()) }
 /// ```
-///
-/// The following showcases positional parameters using `#[option]` and
-/// `#[rest]`.
-///
-/// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     ["foo", "bar", "baz"].iter().copied().map(String::from) =>
-///     /// A simple test command.
-///     "command [-h]" {
-///         first: String,
-///         second: Option<String>,
-///         rest: Vec<String>,
-///     }
-///     (a, #[option] b, #[rest] c) => {
-///         first = a;
-///         second = b;
-///         rest = c;
-///         Ok(())
-///     }
-/// }?;
 ///
 /// assert_eq!(args.first, "foo");
 /// assert_eq!(args.second.as_deref(), Some("bar"));
@@ -677,8 +684,13 @@ macro_rules! __parse_inner {
         }
     };
 
+    // Parse the rest of the available arguments.
+    (@switch-argument #[rest] $switch:ident, $it:ident, $arg:ident) => {
+        (&mut $it).map(String::from).collect::<Vec<_>>()
+    };
+
     // Parse an optional argument.
-    (@switch-argument #[option] $argument:ident, $it:ident, $arg:ident) => {
+    (@switch-argument #[option] $switch:ident, $it:ident, $arg:ident) => {
         match $it.peek() {
             Some(n) => if !$crate::__parse_inner!(@is-switch n) {
                 $it.next()
@@ -704,7 +716,7 @@ macro_rules! __parse_inner {
     (@help
         $help:ident,
         $(#[doc = $doc:literal])*
-        ($first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*)
+        $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
@@ -788,7 +800,7 @@ macro_rules! __parse_inner {
     (@branch
         $switch:ident, $it:ident,
         $(#[doc = $doc:literal])*
-        ($first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*)
+        $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
