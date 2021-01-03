@@ -68,19 +68,120 @@
 use std::error;
 use std::fmt;
 
-/// Helper utility for building documentation.
-pub fn doc<'a>(initial: &'a str, docs: &'a [&'static str]) -> impl fmt::Display + 'a {
-    Doc { initial, docs }
+struct Doc {
+    initial: Box<str>,
+    docs: Vec<&'static str>,
 }
 
-struct Doc<'a> {
+impl Doc {
+    fn format(&self, max_initial: usize) -> impl fmt::Display + '_ {
+        DocFormat {
+            initial: &self.initial,
+            max_initial: Some(max_initial),
+            docs: &self.docs,
+        }
+    }
+}
+
+/// Helper utility for building documentation.
+pub fn doc<'a>(
+    initial: &'a str,
+    max_initial: Option<usize>,
+    docs: &'a [&'static str],
+) -> impl fmt::Display + 'a {
+    DocFormat {
+        initial,
+        max_initial,
+        docs,
+    }
+}
+
+/// Helper to format a documentation snippet.
+struct DocFormat<'a> {
     initial: &'a str,
     docs: &'a [&'static str],
+    max_initial: Option<usize>,
 }
 
-impl fmt::Display for Doc<'_> {
+impl<'a> DocFormat<'a> {
+    fn new(initial: &'a str, docs: &'a [&'static str]) -> Self {
+        Self {
+            initial,
+            docs,
+            max_initial: None,
+        }
+    }
+}
+
+impl fmt::Display for DocFormat<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        textwrap(f, self.docs, 80, &self.initial)?;
+        if !self.docs.is_empty() {
+            textwrap(f, self.docs, 80, &self.initial, self.max_initial)?;
+        } else {
+            write!(f, "{}", self.initial)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Helper for construct help text.
+pub struct Help<'a> {
+    usage: &'a str,
+    docs: &'a [&'static str],
+    field_docs: Vec<Doc>,
+    field_initial: String,
+    max_initial: usize,
+}
+
+impl<'a> Help<'a> {
+    /// Construct a new help generator.
+    pub fn new(usage: &'a str, docs: &'a [&'static str]) -> Self {
+        Self {
+            usage,
+            docs,
+            field_docs: Vec::new(),
+            field_initial: String::new(),
+            max_initial: 0,
+        }
+    }
+
+    /// Get a mutable work buffer for the prefix.
+    pub fn field_initial_mut(&mut self) -> &mut String {
+        self.field_initial.clear();
+        &mut self.field_initial
+    }
+
+    /// Add the documentation for a single fields.
+    pub fn field_doc(&mut self, docs: Vec<&'static str>) {
+        if !docs.is_empty() {
+            self.field_initial.push_str("  ");
+        }
+
+        self.max_initial = usize::max(self.max_initial, self.field_initial.len());
+        let initial = self.field_initial.clone().into();
+        self.field_docs.push(Doc { initial, docs })
+    }
+}
+
+impl fmt::Display for Help<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Usage: {name}", name = self.usage)?;
+
+        if !self.docs.is_empty() {
+            writeln!(f, "{}", DocFormat::new("", &self.docs))?;
+        }
+
+        writeln!(f)?;
+
+        if !self.field_docs.is_empty() {
+            writeln!(f, "Options:")?;
+
+            for doc in &self.field_docs {
+                writeln!(f, "{}", doc.format(self.max_initial))?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -383,17 +484,10 @@ macro_rules! __parse_inner {
             fn write_help(mut w: impl ::std::io::Write) -> ::std::io::Result<()> {
                 use std::fmt::Write as _;
 
-                writeln!(w, "Usage: {name}", name = $usage)?;
-
-                let docs = vec![$($doc,)*];
-
-                if !docs.is_empty() {
-                    writeln!(w, "{}", $crate::doc("", &docs))?;
-                }
-
-                writeln!(w)?;
-                let mut prefix = String::new();
-                $crate::__parse_inner!(@help w, prefix, $($tt)*);
+                let docs = [$($doc,)*];
+                let mut help = ::argwerk::Help::new($usage, &docs[..]);
+                $crate::__parse_inner!(@help help, $($tt)*);
+                write!(w, "{}", help)?;
                 Ok(())
             }
 
@@ -472,99 +566,81 @@ macro_rules! __parse_inner {
     };
 
     // Empty help generator.
-    (@help $w:ident, $prefix:ident,) => {};
+    (@help $help:ident,) => {};
 
     // Generate help for positional parameters.
     (@help
-        $w:ident,
-        $prefix:ident,
+        $help:ident,
         $(#[doc = $doc:literal])*
         ($first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)*)
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        $prefix.clear();
+        let prefix = $help.field_initial_mut();
 
-        $prefix.push_str("  <");
-        $prefix.push_str(stringify!($first));
-        $prefix.push_str(">");
+        prefix.push_str("  <");
+        prefix.push_str(stringify!($first));
+        prefix.push_str(">");
 
         $(
-            $prefix.push_str(" <");
-            $prefix.push_str(stringify!($rest));
-            $prefix.push_str(">");
+            prefix.push_str(" <");
+            prefix.push_str(stringify!($rest));
+            prefix.push_str(">");
         )*
 
         let docs = vec![$($doc,)*];
+        $help.field_doc(docs);
 
-        if !docs.is_empty() {
-            $prefix.push_str(" - ");
-            writeln!($w, "{}", $crate::doc(&$prefix, &docs))?;
-        } else {
-            writeln!($w, "{}", $prefix)?;
-        }
-
-        $crate::__parse_inner!(@help $w, $prefix, $($tail)*);
+        $crate::__parse_inner!(@help $help, $($tail)*);
     }};
 
     // Generate help for #[rest] bindings.
     (@help
-        $w:ident,
-        $prefix:ident,
+        $help:ident,
         $(#[doc = $doc:literal])*
         #[rest] $binding:ident $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        $prefix.clear();
-        $prefix.push_str("  <");
-        $prefix.push_str(stringify!($binding));
-        $prefix.push_str("..>");
+        let prefix = $help.field_initial_mut();
+
+        prefix.push_str("  <");
+        prefix.push_str(stringify!($binding));
+        prefix.push_str("..>");
 
         let docs = vec![$($doc,)*];
+        $help.field_doc(docs);
 
-        if !docs.is_empty() {
-            $prefix.push_str(" - ");
-            writeln!($w, "{}", $crate::doc(&$prefix, &docs))?;
-        } else {
-            writeln!($w, "{}", $prefix)?;
-        }
-
-        $crate::__parse_inner!(@help $w, $prefix, $($tail)*);
+        $crate::__parse_inner!(@help $help, $($tail)*);
     }};
 
     // A branch in a help generator.
     (@help
-        $w:ident,
-        $prefix:ident,
+        $help:ident,
         $(#[doc = $doc:literal])*
         $first:literal $(| $rest:literal)* $(, $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        $prefix.clear();
-        $prefix.push_str("  ");
-        $prefix.push_str($first);
+        let prefix = $help.field_initial_mut();
+
+        prefix.clear();
+        prefix.push_str("  ");
+        prefix.push_str($first);
 
         $(
-            $prefix.push_str(", ");
-            $prefix.push_str($rest);
+            prefix.push_str(", ");
+            prefix.push_str($rest);
         )*
 
         $(
-            $prefix.push_str(" <");
-            $prefix.push_str(stringify!($arg));
-            $prefix.push('>');
+            prefix.push_str(" <");
+            prefix.push_str(stringify!($arg));
+            prefix.push('>');
         )*
 
         let docs = vec![$($doc,)*];
+        $help.field_doc(docs);
 
-        if !docs.is_empty() {
-            $prefix.push_str(" - ");
-            writeln!($w, "{}", $crate::doc(&$prefix, &docs))?;
-        } else {
-            writeln!($w, "{}", $prefix)?;
-        }
-
-        $crate::__parse_inner!(@help $w, $prefix, $($tail)*);
+        $crate::__parse_inner!(@help $help, $($tail)*);
     }};
 
     // The empty condition.
@@ -668,7 +744,14 @@ macro_rules! __parse_inner {
 }
 
 /// Utility for the bytewise wrapping of text.
-fn textwrap<I>(f: &mut fmt::Formatter<'_>, lines: I, width: usize, initial: &str) -> fmt::Result
+fn textwrap<I>(
+    f: &mut fmt::Formatter<'_>,
+    lines: I,
+    width: usize,
+    initial: &str,
+    trim: usize,
+    max_initial: Option<usize>,
+) -> fmt::Result
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
@@ -700,8 +783,18 @@ where
 
             if std::mem::take(&mut first) {
                 f.write_str(initial)?;
+
+                if let Some(max_initial) = max_initial {
+                    let fill = max_initial.saturating_sub(initial.len());
+
+                    for c in std::iter::repeat(' ').take(fill) {
+                        write!(f, "{}", c)?;
+                    }
+                }
             } else {
-                for c in std::iter::repeat(' ').take(initial.len()) {
+                let fill = max_initial.unwrap_or(initial.len());
+
+                for c in std::iter::repeat(' ').take(fill) {
                     write!(f, "{}", c)?;
                 }
             };

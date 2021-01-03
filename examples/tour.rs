@@ -27,6 +27,7 @@ fn main() -> Result<(), argwerk::Error> {
             Ok(())
         }
         /// Takes argument at <foo> and <bar>.
+        ///    * This is an indented message.
         (foo, #[option] bar, #[rest] args) if positional.is_none() => {
             positional = Some((foo, bar));
             rest = args;
