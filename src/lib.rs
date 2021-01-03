@@ -904,73 +904,68 @@ where
     I: IntoIterator,
     I::Item: AsRef<str>,
 {
-    let mut first = true;
     let mut it = lines.into_iter().peekable();
 
+    let fill = max_initial.unwrap_or(initial.len());
+    let mut initial = Some(initial);
+
     let trim = match it.peek() {
-        Some(line) => line.as_ref().chars().take_while(|c| *c == ' ').count(),
-        None => 0,
+        Some(line) => Some(line.as_ref().chars().take_while(|c| *c == ' ').count()),
+        None => None,
     };
 
     while let Some(line) = it.next() {
-        let line = line.as_ref();
+        let mut line = line.as_ref();
 
-        let mut line = if let Some((index, _)) = line.char_indices().skip(trim).next() {
-            &line[index..]
-        } else {
-            ""
-        };
+        // Trim the line by skipping the whitespace common to all lines..
+        if let Some(trim) = trim {
+            if let Some((i, _)) = line.char_indices().skip(trim).next() {
+                line = &line[i..];
+            } else {
+                // NB: whole line was trimmed.
+                writeln!(f)?;
+                continue;
+            }
+        }
 
         // Whitespace prefix currently in use.
-        let ws = line.chars().take_while(|c| !c.is_alphanumeric()).count();
+        let ws_fill = line.chars().take_while(|c| !c.is_alphanumeric()).count();
         let mut line_first = true;
 
         loop {
+            let fill = if !std::mem::take(&mut line_first) {
+                fill + ws_fill
+            } else {
+                fill
+            };
+
             let mut col = 0;
 
-            while !line.is_empty() {
-                let new = match line[col..].find(' ') {
+            loop {
+                let next = match line[col..].find(' ') {
                     Some(i) => col + i + 1,
                     None => {
-                        col = 0;
+                        if line.len() + fill <= width {
+                            col = 0;
+                        }
+
                         break;
                     }
                 };
 
-                if new + initial.len() > width {
+                if next + fill > width {
                     break;
                 }
 
-                col = new;
+                col = next;
             }
 
-            if std::mem::take(&mut first) {
-                f.write_str(initial)?;
-
-                if let Some(max_initial) = max_initial {
-                    let fill = max_initial.saturating_sub(initial.len());
-
-                    for c in std::iter::repeat(' ').take(fill) {
-                        write!(f, "{}", c)?;
-                    }
-                }
-            } else {
-                let fill = max_initial.unwrap_or(initial.len());
-
-                for c in std::iter::repeat(' ').take(fill) {
-                    write!(f, "{}", c)?;
-                }
-            };
-
-            if !std::mem::take(&mut line_first) {
-                for c in std::iter::repeat(' ').take(ws) {
-                    write!(f, "{}", c)?;
-                }
-            }
+            let initial = initial.take().unwrap_or_default();
+            f.write_str(initial)?;
+            fill_whitespace(f, fill.saturating_sub(initial.len()))?;
 
             if col > 0 {
-                f.write_str(&line[..(col - 1)])?;
-                f.write_str("\n")?;
+                writeln!(f, "{}", &line[..(col - 1)])?;
                 line = &line[col..];
                 continue;
             }
@@ -980,9 +975,17 @@ where
         }
 
         if it.peek().is_some() {
-            f.write_str("\n")?;
+            writeln!(f)?;
         }
     }
 
-    Ok(())
+    return Ok(());
+
+    fn fill_whitespace(f: &mut fmt::Formatter<'_>, count: usize) -> fmt::Result {
+        for _ in 0..count {
+            f.write_str(" ")?;
+        }
+
+        Ok(())
+    }
 }
