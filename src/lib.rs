@@ -35,12 +35,11 @@
 //! ```rust
 //! # fn main() -> Result<(), argwerk::Error> {
 //! let args = argwerk::parse! {
-//!     /// A simple test command.
-//!     ///
-//!     /// This is nice!
-//!     "testcommand [-h]" {
+//!     /// A command touring the capabilities of argwerk.
+//!     "tour [-h]" {
 //!         help: bool,
 //!         file: Option<String>,
+//!         input: Option<String>,
 //!         limit: usize = 42,
 //!         positional: Option<(String, Option<String>)>,
 //!         rest: Vec<String>,
@@ -64,6 +63,11 @@
 //!     /// Write to the file specified by <path>.
 //!     "--file", path if !file.is_some() => {
 //!         file = Some(path);
+//!         Ok(())
+//!     }
+//!     /// Read from the specified input.
+//!     "--input", #[option] path => {
+//!         input = path;
 //!         Ok(())
 //!     }
 //!     /// Takes argument at <foo> and <bar>.
@@ -309,7 +313,7 @@ pub enum ErrorKind {
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         help: bool,
 ///         limit: usize = 10,
 ///     }
@@ -325,7 +329,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     vec!["foo", "bar", "baz"] =>
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         help: bool,
 ///         limit: usize = 10,
 ///         positional: Option<(&'static str, &'static str, &'static str)>,
@@ -353,7 +357,7 @@ pub enum ErrorKind {
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = argwerk::parse! {
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         help: bool,
 ///         limit: usize = 10,
 ///     }
@@ -373,7 +377,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     vec![String::from("-h")] =>
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         help: bool,
 ///     }
 ///     /// Print the help.
@@ -398,7 +402,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     vec![String::from("-h")] =>
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         help: bool,
 ///     }
 ///     /// Prints the help.
@@ -420,7 +424,7 @@ pub enum ErrorKind {
 /// This would print:
 ///
 /// ```text
-/// Usage: testcommand [-h]
+/// Usage: command [-h]
 /// A simple test command.
 ///
 /// This is nice!
@@ -452,7 +456,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     vec![String::from("foo"), String::from("bar"), String::from("baz")] =>
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         rest: Vec<String>,
 ///     }
 ///     #[rest] args => {
@@ -462,6 +466,52 @@ pub enum ErrorKind {
 /// }?;
 ///
 /// assert_eq!(args.rest, &["foo", "bar", "baz"]);
+/// # Ok(()) }
+/// ```
+///
+/// ## Parse optional arguments with `#[option]`
+///
+/// Switches and positional arguments can be marked with the `#[option]`
+/// attribute. This will cause the argument to take a value of type
+/// `Option<I::Item>`.
+///
+/// An optional argument parses to `None` if:
+/// * There are no more arguments to parse.
+/// * The argument is a switch (starts with `-`).
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let parser = |iter: &[&str]| argwerk::parse! {
+///     iter.iter().copied().map(String::from) =>
+///     /// A simple test command.
+///     "command [-h]" {
+///         foo: Option<String>,
+///         bar: bool,
+///     }
+///     /// A switch taking an optional argument.
+///     "--foo", #[option] arg => {
+///         foo = arg;
+///         Ok(())
+///     }
+///     "--bar" => {
+///         bar = true;
+///         Ok(())
+///     }
+/// };
+///
+/// // Argument exists, but looks like a switch.
+/// let args = parser(&["--foo", "--bar"])?;
+/// assert_eq!(args.foo.as_deref(), None);
+/// assert!(args.bar);
+///
+/// // Argument does not exist.
+/// let args = parser(&["--foo"])?;
+/// assert_eq!(args.foo.as_deref(), None);
+/// assert!(!args.bar);
+///
+/// let args = parser(&["--foo", "bar"])?;
+/// assert_eq!(args.foo.as_deref(), Some("bar"));
+/// assert!(!args.bar);
 /// # Ok(()) }
 /// ```
 ///
@@ -482,7 +532,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     ["a", "b"].iter().copied().map(String::from) =>
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         positional: Option<(String, String)>,
 ///     }
 ///     /// Takes argument at <foo> and <bar>.
@@ -504,7 +554,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     ["foo", "bar", "baz"].iter().copied().map(String::from) =>
 ///     /// A simple test command.
-///     "testcommand [-h]" {
+///     "command [-h]" {
 ///         first: String,
 ///         second: Option<String>,
 ///         rest: Vec<String>,
@@ -528,7 +578,7 @@ macro_rules! parse {
     (
         $it:expr => $($rest:tt)*
     ) => {{
-        let mut __argwerk_it = ::std::iter::IntoIterator::into_iter($it);
+        let mut __argwerk_it = ::std::iter::IntoIterator::into_iter($it).peekable();
         $crate::__parse_inner!(__argwerk_it, $($rest)*)
     }};
 
@@ -536,7 +586,7 @@ macro_rules! parse {
     (
         $($rest:tt)*
     ) => {{
-        let mut __argwerk_it = ::std::env::args();
+        let mut __argwerk_it = ::std::env::args().peekable();
         __argwerk_it.next();
         $crate::__parse_inner!(__argwerk_it, $($rest)*)
     }};
@@ -600,7 +650,14 @@ macro_rules! __parse_inner {
 
     // Parse an optional argument.
     (@positional #[option] $it:ident, $arg:ident) => {
-        $it.next()
+        match $it.peek() {
+            Some(n) => if !$crate::__parse_inner!(@is-switch n) {
+                $it.next()
+            } else {
+                None
+            }
+            None => None,
+        }
     };
 
     // Parse the rest of the arguments.
@@ -629,6 +686,23 @@ macro_rules! __parse_inner {
                     }
                 )
             ),
+        }
+    };
+
+    // Test if `$n` is switch or not.
+    (@is-switch $n:ident) => {
+        std::convert::AsRef::<str>::as_ref($n).starts_with('-')
+    };
+
+    // Parse an optional argument.
+    (@argument #[option] $argument:ident, $it:ident, $arg:ident) => {
+        match $it.peek() {
+            Some(n) => if !$crate::__parse_inner!(@is-switch n) {
+                $it.next()
+            } else {
+                None
+            }
+            None => None,
         }
     };
 
@@ -692,7 +766,7 @@ macro_rules! __parse_inner {
     (@help
         $help:ident,
         $(#[doc = $doc:literal])*
-        $first:literal $(| $rest:literal)* $(, $arg:ident)* $(if $cond:expr)? => $block:block
+        $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
         let prefix = $help.field_initial_mut();
@@ -791,12 +865,12 @@ macro_rules! __parse_inner {
     (@branch
         $argument:ident, $it:ident,
         $(#[$($meta:tt)*])*
-        $first:literal $(| $rest:literal)* $(, $arg:ident)* $(if $cond:expr)? => $block:block
+        $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
         match std::convert::AsRef::<str>::as_ref(&$argument) {
             $first $( | $rest)* $(if $cond)* => {
-                $(let $arg = $crate::__parse_inner!(@argument $argument, $it, $arg);)*
+                $(let $arg = $crate::__parse_inner!(@argument $(#[$($arg_meta)*])* $argument, $it, $arg);)*
 
                 let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                     $block

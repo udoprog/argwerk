@@ -39,9 +39,10 @@ let args = argwerk::parse! {
     /// A simple test command.
     ///
     /// This is nice!
-    "testcommand [-h]" {
+    "command [-h]" {
         help: bool,
         file: Option<String>,
+        input: Option<String>,
         limit: usize = 42,
         positional: Option<(String, Option<String>)>,
         rest: Vec<String>,
@@ -65,6 +66,11 @@ let args = argwerk::parse! {
     /// Write to the file specified by <path>.
     "--file", path if !file.is_some() => {
         file = Some(path);
+        Ok(())
+    }
+    /// Read from the specified input.
+    "--input", #[option] path => {
+        input = path;
         Ok(())
     }
     /// Takes argument at <foo> and <bar>.
