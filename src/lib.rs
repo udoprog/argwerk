@@ -910,7 +910,7 @@ where
     let mut initial = Some(initial);
 
     let trim = match it.peek() {
-        Some(line) => Some(line.as_ref().chars().take_while(|c| *c == ' ').count()),
+        Some(line) => Some(chars_count(line.as_ref(), |c| c == ' ')),
         None => None,
     };
 
@@ -919,17 +919,17 @@ where
 
         // Trim the line by skipping the whitespace common to all lines..
         if let Some(trim) = trim {
-            if let Some((i, _)) = line.char_indices().skip(trim).next() {
-                line = &line[i..];
-            } else {
-                // NB: whole line was trimmed.
+            line = skip_chars(line, trim);
+
+            // Whole line was trimmed.
+            if line.is_empty() {
                 writeln!(f)?;
                 continue;
             }
         }
 
         // Whitespace prefix currently in use.
-        let ws_fill = line.chars().take_while(|c| !c.is_alphanumeric()).count();
+        let ws_fill = next_index(line, char::is_alphanumeric).unwrap_or_default();
         let mut line_first = true;
 
         loop {
@@ -939,34 +939,41 @@ where
                 fill
             };
 
-            let mut col = 0;
+            let mut space_span = None;
 
             loop {
-                let next = match line[col..].find(' ') {
-                    Some(i) => col + i + 1,
+                let c = space_span.map(|(_, e)| e).unwrap_or_default();
+
+                let (start, leap) = match line[c..].find(' ') {
+                    Some(i) => {
+                        let leap = next_index(&line[c + i..], |c| c != ' ').unwrap_or(1);
+                        (c + i, leap)
+                    }
                     None => {
+                        // if the line fits within the current target fill,
+                        // include all of it.
                         if line.len() + fill <= width {
-                            col = 0;
+                            space_span = None;
                         }
 
                         break;
                     }
                 };
 
-                if next + fill > width {
+                if start + fill > width {
                     break;
                 }
 
-                col = next;
+                space_span = Some((start, start + leap));
             }
 
             let initial = initial.take().unwrap_or_default();
             f.write_str(initial)?;
-            fill_whitespace(f, fill.saturating_sub(initial.len()))?;
+            fill_spaces(f, fill.saturating_sub(initial.len()))?;
 
-            if col > 0 {
-                writeln!(f, "{}", &line[..(col - 1)])?;
-                line = &line[col..];
+            if let Some((start, end)) = space_span {
+                writeln!(f, "{}", &line[..start])?;
+                line = &line[end..];
                 continue;
             }
 
@@ -981,9 +988,35 @@ where
 
     return Ok(());
 
-    fn fill_whitespace(f: &mut fmt::Formatter<'_>, count: usize) -> fmt::Result {
-        for _ in 0..count {
-            f.write_str(" ")?;
+    /// Get the next index that is alphanumeric.
+    fn next_index(s: &str, p: fn(char) -> bool) -> Option<usize> {
+        Some(s.char_indices().skip_while(|(_, c)| !p(*c)).next()?.0)
+    }
+
+    /// Count the number of spaces in the string, and return the first index that is not a space.
+    fn chars_count(s: &str, p: fn(char) -> bool) -> usize {
+        s.chars().take_while(|c| p(*c)).count()
+    }
+
+    /// Skip the given number of characters.
+    fn skip_chars(s: &str, count: usize) -> &str {
+        let e = s
+            .char_indices()
+            .take(count)
+            .map(|(i, _)| i)
+            .next()
+            .unwrap_or(s.len());
+
+        &s[e..]
+    }
+
+    fn fill_spaces(f: &mut fmt::Formatter<'_>, mut count: usize) -> fmt::Result {
+        // Static buffer for quicker whitespace filling.
+        static BUF: &str = "                                                                ";
+
+        while count > 0 {
+            f.write_str(&BUF[..usize::min(count, BUF.len())])?;
+            count = count.saturating_sub(BUF.len());
         }
 
         Ok(())
