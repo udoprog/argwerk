@@ -10,7 +10,12 @@ fn main() -> Result<(), argwerk::Error> {
             positional: Option<(String, Option<String>)>,
             rest: Vec<String>,
         }
-        /// Print this help.
+        /// Prints the help.
+        ///
+        /// This includes:
+        ///    * All the available switches.
+        ///    * All the available positional arguments.
+        ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
         "-h" | "--help" => {
             help = true;
             print_help();
@@ -27,7 +32,8 @@ fn main() -> Result<(), argwerk::Error> {
             Ok(())
         }
         /// Takes argument at <foo> and <bar>.
-        ///    * This is an indented message.
+        ///
+        ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
         (foo, #[option] bar, #[rest] args) if positional.is_none() => {
             positional = Some((foo, bar));
             rest = args;

@@ -8,6 +8,19 @@
 //! Instead this can be used as an alternative quick-and-dirty approach that can
 //! be cheaply incorporated into a tool.
 //!
+//! We provide:
+//! * A dependency-free commandline parsing framework using declarative macros.
+//!   So it's hopefully lightweight and compiles quickly.
+//! * A flexible mechanism for parsing.
+//! * Formatting decent looking help messages.
+//!
+//! We specifically do not support:
+//! * As-close-to correct line wrapping with wide unicode characters as possible
+//!   (see [textwrap]).
+//! * Required arguments. If your argument is required, you'll have to
+//!   [ok_or_else] it yourself from an `Option<T>`.
+//! * Complex command structures like subcommands.
+//!
 //! For a more complete commandline parsing library, use [clap].
 //!
 //! See the documentation for [argwerk::parse!] for how to use.
@@ -32,7 +45,12 @@
 //!         positional: Option<(String, Option<String>)>,
 //!         rest: Vec<String>,
 //!     }
-//!     /// Print this help.
+//!     /// Prints the help.
+//!     ///
+//!     /// This includes:
+//!     ///    * All the available switches.
+//!     ///    * All the available positional arguments.
+//!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 //!     "-h" | "--help" => {
 //!         help = true;
 //!         print_help();
@@ -49,6 +67,8 @@
 //!         Ok(())
 //!     }
 //!     /// Takes argument at <foo> and <bar>.
+//!     ///
+//!     ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
 //!     (foo, #[option] bar, #[rest] args) if positional.is_none() => {
 //!         positional = Some((foo, bar));
 //!         rest = args;
@@ -60,6 +80,8 @@
 //! # Ok(()) }
 //! ```
 //!
+//! [ok_or_else]: https://doc.rust-lang.org/std/option/enum.Option.html#method.ok_or_else
+//! [textwrap]: https://docs.rs/textwrap/0.13.2/textwrap/#displayed-width-vs-byte-size
 //! [argwerk::parse!]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
 //! [clap]: https://docs.rs/clap
 
@@ -318,11 +340,10 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// # Arguments
+/// ## Arguments structure
 ///
 /// The first part of the [parse] macro defines the state available to the
 /// parser. These are field-like declarations which can specify a default value.
-///
 /// This is the only required component of the macro.
 ///
 /// Fields which do not specify an initialization value will be initialized
@@ -366,6 +387,60 @@ pub enum ErrorKind {
 /// assert_eq!(args.help, true);
 /// # Ok(()) }
 /// ```
+///
+/// ## Documentation
+///
+/// You specify documentation for argument branches with doc comments. These are
+/// automatically wrapped to 80 characters and pretty printed.
+///
+/// ```rust
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     vec![String::from("-h")] =>
+///     /// A simple test command.
+///     "testcommand [-h]" {
+///         help: bool,
+///     }
+///     /// Prints the help.
+///     ///
+///     /// This includes:
+///     ///    * All the available switches.
+///     ///    * All the available positional arguments.
+///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
+///     "-h" | "--help" => {
+///         help = true;
+///         print_help();
+///         Ok(())
+///     }
+/// }?;
+///
+/// # Ok(()) }
+/// ```
+///
+/// This would print:
+///
+/// ```text
+/// Usage: testcommand [-h]
+/// A simple test command.
+///
+/// This is nice!
+///
+/// Options:
+///   -h, --help  Prints the help.
+///
+///               This includes:
+///                  * All the available switches.
+///                  * All the available positional arguments.
+///                  * Whatever else the developer decided to put in here! We even
+///                    support wrapping comments which are overly long.
+/// ```
+///
+/// We determine the initial indentation level from the first doc comment. Above
+/// this would be "Prints the help.".
+///
+/// When we wrap individual lines, we determine the indentation level to use by
+/// finding the first alphanumerical character on the previous line. This is why
+/// the "overly long comment" above wraps correctly in the markdown list.
 ///
 /// ## Parse all available arguments with `#[rest]`
 ///
@@ -749,7 +824,6 @@ fn textwrap<I>(
     lines: I,
     width: usize,
     initial: &str,
-    trim: usize,
     max_initial: Option<usize>,
 ) -> fmt::Result
 where
@@ -759,8 +833,23 @@ where
     let mut first = true;
     let mut it = lines.into_iter().peekable();
 
+    let trim = match it.peek() {
+        Some(line) => line.as_ref().chars().take_while(|c| *c == ' ').count(),
+        None => 0,
+    };
+
     while let Some(line) = it.next() {
-        let mut line = line.as_ref().trim();
+        let line = line.as_ref();
+
+        let mut line = if let Some((index, _)) = line.char_indices().skip(trim).next() {
+            &line[index..]
+        } else {
+            ""
+        };
+
+        // Whitespace prefix currently in use.
+        let ws = line.chars().take_while(|c| !c.is_alphanumeric()).count();
+        let mut line_first = true;
 
         loop {
             let mut col = 0;
@@ -798,6 +887,12 @@ where
                     write!(f, "{}", c)?;
                 }
             };
+
+            if !std::mem::take(&mut line_first) {
+                for c in std::iter::repeat(' ').take(ws) {
+                    write!(f, "{}", c)?;
+                }
+            }
 
             if col > 0 {
                 f.write_str(&line[..(col - 1)])?;
