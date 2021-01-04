@@ -878,12 +878,6 @@ macro_rules! __impl {
         &[$($crate::__impl!(@switch-help $($doc)* [$($branch)*])),*]
     };
 
-    // The empty condition.
-    (@cond) => { true };
-
-    // An expression condition.
-    (@cond $expr:expr) => { $expr };
-
     // Expansion for all branches.
     (@branches $switch:ident, $it:ident,
         $(
@@ -898,44 +892,39 @@ macro_rules! __impl {
     // Match positional arguments.
     (@branch
         $switch:ident, $it:ident,
-        [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
+        [ $(#$first_meta:tt)* $first:ident $(, $(#$rest_meta:tt)* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
     ) => {
-        if $crate::__impl!(@cond $($cond)*) {
-            let __argwerk_name = $crate::__impl!(@to-str &$switch).into();
+        match () {
+            _ $(if $cond)* => {
+                let __argwerk_name = $crate::__impl!(@to-str &$switch).into();
 
-            let $first = $crate::__impl!(@first $(#[$($first_meta)*])* $switch, $it);
-            $(let $rest = $crate::__impl!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
+                let $first = $crate::__impl!(@first $(#$first_meta)* $switch, $it);
+                $(let $rest = $crate::__impl!(@positional $(#$rest_meta)* $it, $rest);)*
 
-            let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
-                $crate::helpers::into_result($block)
-            };
+                if let Err(error) = (|| $crate::helpers::into_result($block))() {
+                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
+                        name: __argwerk_name,
+                        error
+                    }));
+                }
 
-            if let Err(error) = __argwerk_handle() {
-                return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                    name: __argwerk_name,
-                    error
-                }));
+                continue;
             }
-
-            continue;
+            _ => ()
         }
     };
 
     // A single branch expansion.
     (@branch
         $switch:ident, $it:ident,
-        [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*] $(if $cond:expr)? => $block:block
+        [$first:literal $(| $rest:literal)* $(, $(#$arg_meta:tt)* $arg:ident)*] $(if $cond:expr)? => $block:block
     ) => {
         match $crate::__impl!(@to-str &$switch) {
             $first $( | $rest)* $(if $cond)* => {
-                $(let $arg = $crate::__impl!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
+                $(let $arg = $crate::__impl!(@switch-argument $(#$arg_meta)* $switch, $it, $arg);)*
 
-                let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
-                    $crate::helpers::into_result($block)
-                };
-
-                if let Err(error) = __argwerk_handle() {
+                if let Err(error) = (|| $crate::helpers::into_result($block))() {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
                         name: $crate::__impl!(@to-str &$switch).into(),
                         error
