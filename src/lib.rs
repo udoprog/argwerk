@@ -53,22 +53,18 @@
 //!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 //!     ["-h" | "--help"] => {
 //!         help = true;
-//!         Ok(())
 //!     }
 //!     /// Limit the number of things by <n> (default: 10).
 //!     ["--limit" | "-l", n] => {
 //!         limit = str::parse(&n)?;
-//!         Ok(())
 //!     }
 //!     /// Write to the file specified by <path>.
 //!     ["--file", path] if !file.is_some() => {
 //!         file = Some(path);
-//!         Ok(())
 //!     }
 //!     /// Read from the specified input.
 //!     ["--input", #[option] path] => {
 //!         input = path;
-//!         Ok(())
 //!     }
 //!     /// Takes argument at <foo> and <bar>.
 //!     ///
@@ -76,7 +72,6 @@
 //!     [foo, #[option] bar, #[rest] args] if positional.is_none() => {
 //!         positional = Some((foo, bar));
 //!         rest = args;
-//!         Ok(())
 //!     }
 //! }?;
 //!
@@ -173,7 +168,7 @@ pub enum ErrorKind {
     ///     vec!["bar"] => "command [-h]" { }
     ///     // This errors because `bar` is not a supported switch, nor do we
     ///     // match any positional arguments.
-    ///     ["--file", arg] => { Ok(()) }
+    ///     ["--file", arg] => {}
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedArgument { .. }));
@@ -196,7 +191,7 @@ pub enum ErrorKind {
     ///     vec!["--path"] => "command [-h]" { }
     ///     // This errors because `--path` is not a supported switch. But
     ///     // `"--file"` is.
-    ///     ["--file", arg] => { Ok(()) }
+    ///     ["--file", arg] => {}
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedSwitch { .. }));
@@ -216,7 +211,7 @@ pub enum ErrorKind {
     ///     vec!["--file"] => "command [-h]" { }
     ///     // This errors because `--file` requires an argument `path`, but
     ///     // that is not provided.
-    ///     ["--file", path] => { Ok(()) }
+    ///     ["--file", path] => {}
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingSwitchArgument { .. }));
@@ -239,7 +234,7 @@ pub enum ErrorKind {
     ///     vec!["foo"] => "command [-h]" { }
     ///     // This errors because `b` is a required argument, but we only have
     ///     // one which matches `a`.
-    ///     [a, b] => { Ok(()) }
+    ///     [a, b] => {}
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingPositional { .. }));
@@ -260,7 +255,7 @@ pub enum ErrorKind {
     ///     vec!["foo"] => "command [-h]" { }
     ///     // This errors because we raise an error in the branch body.
     ///     ["foo"] => {
-    ///         Err("something went wrong".into())
+    ///         Err("something went wrong")
     ///     }
     /// }.unwrap_err();
     ///
@@ -300,7 +295,6 @@ pub enum ErrorKind {
 ///     /// Print this help.
 ///     ["-h" | "--help"] => {
 ///         help = true;
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -325,7 +319,6 @@ pub enum ErrorKind {
 ///     }
 ///     [a, b, c] => {
 ///         positional = Some((a, b, c));
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -357,12 +350,10 @@ pub enum ErrorKind {
 ///     /// Print this help.
 ///     ["-h" | "--help"] => {
 ///         help = true;
-///         Ok(())
 ///     }
 ///     /// Specify a limit (default: 10).
 ///     ["--limit", n] => {
 ///         limit = str::parse(&n)?;
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -392,7 +383,6 @@ pub enum ErrorKind {
 ///     "command [-h]" { help: bool }
 ///     ["-h" | "--help"] => {
 ///         help = true;
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -419,7 +409,6 @@ pub enum ErrorKind {
 ///     "command [-h]" { positional: Option<(String, String)>, }
 ///     [foo, bar] if positional.is_none() => {
 ///         positional = Some((foo, bar));
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -451,7 +440,6 @@ pub enum ErrorKind {
 ///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 ///     ["-h" | "--help"] => {
 ///         help = true;
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -506,7 +494,6 @@ pub enum ErrorKind {
 ///     }
 ///     [#[rest] args] => {
 ///         rest = args;
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -523,7 +510,6 @@ pub enum ErrorKind {
 ///     "command [-h]" { rest: Vec<String>, }
 ///     ["--test", #[rest] args] => {
 ///         rest = args;
-///         Ok(())
 ///     }
 /// }?;
 ///
@@ -553,11 +539,9 @@ pub enum ErrorKind {
 ///     /// A switch taking an optional argument.
 ///     ["--foo", #[option] arg] => {
 ///         foo = arg;
-///         Ok(())
 ///     }
 ///     ["--bar"] => {
 ///         bar = true;
-///         Ok(())
 ///     }
 /// };
 ///
@@ -818,7 +802,7 @@ macro_rules! __internal {
             $(let $rest = $crate::__internal!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
-                $block
+                $crate::helpers::into_result($block)
             };
 
             if let Err(error) = __argwerk_handle() {
@@ -842,7 +826,7 @@ macro_rules! __internal {
                 $(let $arg = $crate::__internal!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
 
                 let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
-                    $block
+                    $crate::helpers::into_result($block)
                 };
 
                 if let Err(error) = __argwerk_handle() {

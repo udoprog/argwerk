@@ -1,7 +1,42 @@
+use std::error;
 use std::fmt;
 
 /// Padding to use between switch summary and help text.
 const PADDING: usize = 2;
+
+/// A boxed error type.
+type BoxError = Box<dyn error::Error + Send + Sync + 'static>;
+
+/// Helper for converting a value into a result.
+///
+/// This is used to convert the value of a branch into a result.
+#[doc(hidden)]
+pub fn into_result<T>(value: T) -> Result<(), BoxError>
+where
+    T: IntoResult,
+{
+    value.into_result()
+}
+
+#[doc(hidden)]
+pub trait IntoResult {
+    fn into_result(self) -> Result<(), BoxError>;
+}
+
+impl IntoResult for () {
+    fn into_result(self) -> Result<(), BoxError> {
+        Ok(())
+    }
+}
+
+impl<E> IntoResult for Result<(), E>
+where
+    BoxError: From<E>,
+{
+    fn into_result(self) -> Result<(), BoxError> {
+        Ok(self?)
+    }
+}
 
 /// Documentation over a single switch.
 pub struct Switch {
@@ -43,7 +78,6 @@ impl Help {
     ///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
     ///     ["-h" | "--help"] => {
     ///         help = true;
-    ///         Ok(())
     ///     }
     /// }?;
     ///
