@@ -50,22 +50,22 @@
 //!     ///    * All the available switches.
 //!     ///    * All the available positional arguments.
 //!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
-//!     "-h" | "--help" => {
+//!     ["-h" | "--help"] => {
 //!         help = true;
 //!         Ok(())
 //!     }
 //!     /// Limit the number of things by <n>.
-//!     "--limit" | "-l", n => {
+//!     ["--limit" | "-l", n] => {
 //!         limit = str::parse(&n)?;
 //!         Ok(())
 //!     }
 //!     /// Write to the file specified by <path>.
-//!     "--file", path if !file.is_some() => {
+//!     ["--file", path] if !file.is_some() => {
 //!         file = Some(path);
 //!         Ok(())
 //!     }
 //!     /// Read from the specified input.
-//!     "--input", #[option] path => {
+//!     ["--input", #[option] path] => {
 //!         input = path;
 //!         Ok(())
 //!     }
@@ -102,7 +102,7 @@ pub mod helpers;
 
 use std::error;
 
-pub use self::helpers::Help;
+pub use self::helpers::{Help, Switch};
 
 /// An error raised by argwerk.
 #[derive(Debug)]
@@ -171,7 +171,7 @@ pub enum ErrorKind {
     ///     vec!["bar"] => "command [-h]" { }
     ///     // This errors because `bar` is not a supported switch, nor do we
     ///     // match any positional arguments.
-    ///     "--file", arg => { Ok(()) }
+    ///     ["--file", arg] => { Ok(()) }
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedArgument { .. }));
@@ -194,7 +194,7 @@ pub enum ErrorKind {
     ///     vec!["--path"] => "command [-h]" { }
     ///     // This errors because `--path` is not a supported switch. But
     ///     // `"--file"` is.
-    ///     "--file", arg => { Ok(()) }
+    ///     ["--file", arg] => { Ok(()) }
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedSwitch { .. }));
@@ -214,7 +214,7 @@ pub enum ErrorKind {
     ///     vec!["--file"] => "command [-h]" { }
     ///     // This errors because `--file` requires an argument `path`, but
     ///     // that is not provided.
-    ///     "--file", path => { Ok(()) }
+    ///     ["--file", path] => { Ok(()) }
     /// }.unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingSwitchArgument { .. }));
@@ -257,7 +257,7 @@ pub enum ErrorKind {
     /// let error = argwerk::parse! {
     ///     vec!["foo"] => "command [-h]" { }
     ///     // This errors because we raise an error in the branch body.
-    ///     "foo" => {
+    ///     ["foo"] => {
     ///         Err("something went wrong".into())
     ///     }
     /// }.unwrap_err();
@@ -296,7 +296,7 @@ pub enum ErrorKind {
 ///         limit: usize = 10,
 ///     }
 ///     /// Print this help.
-///     "-h" | "--help" => {
+///     ["-h" | "--help"] => {
 ///         help = true;
 ///         Ok(())
 ///     }
@@ -353,12 +353,12 @@ pub enum ErrorKind {
 ///         limit: usize = 10,
 ///     }
 ///     /// Print this help.
-///     "-h" | "--help" => {
+///     ["-h" | "--help"] => {
 ///         help = true;
 ///         Ok(())
 ///     }
 ///     /// Specify a limit (default: 10).
-///     "--limit", n => {
+///     ["--limit", n] => {
 ///         limit = str::parse(&n)?;
 ///         Ok(())
 ///     }
@@ -388,7 +388,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     vec!["-h"] =>
 ///     "command [-h]" { help: bool }
-///     "-h" | "--help" => {
+///     ["-h" | "--help"] => {
 ///         help = true;
 ///         Ok(())
 ///     }
@@ -453,7 +453,7 @@ pub enum ErrorKind {
 ///     ///    * All the available switches.
 ///     ///    * All the available positional arguments.
 ///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
-///     "-h" | "--help" => {
+///     ["-h" | "--help"] => {
 ///         help = true;
 ///         Ok(())
 ///     }
@@ -525,7 +525,7 @@ pub enum ErrorKind {
 /// let args = argwerk::parse! {
 ///     vec!["--test", "foo", "bar", "baz"].into_iter().map(String::from) =>
 ///     "command [-h]" { rest: Vec<String>, }
-///     "--test", #[rest] args => {
+///     ["--test", #[rest] args] => {
 ///         rest = args;
 ///         Ok(())
 ///     }
@@ -555,11 +555,11 @@ pub enum ErrorKind {
 ///         bar: bool,
 ///     }
 ///     /// A switch taking an optional argument.
-///     "--foo", #[option] arg => {
+///     ["--foo", #[option] arg] => {
 ///         foo = arg;
 ///         Ok(())
 ///     }
-///     "--bar" => {
+///     ["--bar"] => {
 ///         bar = true;
 ///         Ok(())
 ///     }
@@ -638,22 +638,12 @@ macro_rules! __internal {
             impl Args {
                 /// Return a formatter that formats to the help string at 80
                 /// characters witdth of this argument structure.
-                fn help(&self) -> impl ::std::fmt::Display {
-                    self.help_with(80)
-                }
-
-                /// Return a formatter that formats to the help string with the
-                /// given character width of this argument structure.
-                fn help_with(&self, width: usize) -> impl ::std::fmt::Display {
-                    let mut __argwerk_switches = Vec::new();
-                    $crate::__internal!(@switch-help __argwerk_switches, $($config)*);
-
-                    ::argwerk::helpers::Help::new(
-                        $usage,
-                        &[$($doc,)*],
-                        width,
-                        __argwerk_switches.into(),
-                    )
+                pub fn help(&self) -> &'static $crate::Help {
+                    &$crate::Help {
+                        usage: $usage,
+                        docs: &[$($doc,)*],
+                        switches: $crate::__internal!(@switch-help $($config)*)
+                    }
                 }
             }
 
@@ -774,47 +764,40 @@ macro_rules! __internal {
         let mut $field: $ty = $expr;
     };
 
-    // Empty help generator.
-    (@switch-help $switches:ident,) => {};
-
     // Generate help for positional parameters.
     (@switch-help
-        $switches:ident,
-        $(#[doc = $doc:literal])*
+        $($doc:literal)*
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
-        $(if $cond:expr)? => $block:block
-        $($tail:tt)*
-    ) => {{
-        $switches.push($crate::helpers::Doc::new(
-            concat!(
+    ) => {
+        $crate::Switch {
+            init: concat!(
                 "  ", $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
                 $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
                 $crate::__internal!(@doc-tail $($doc)*)
             ),
-            &[$($doc,)*]
-        ));
-
-        $crate::__internal!(@switch-help $switches, $($tail)*);
-    }};
+            docs: &[$($doc,)*]
+        }
+    };
 
     // A branch in a help generator.
     (@switch-help
-        $switches:ident,
-        $(#[doc = $doc:literal])*
-        $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
-        $($tail:tt)*
-    ) => {{
-        $switches.push($crate::helpers::Doc::new(
-            concat!(
+        $($doc:literal)*
+        [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*]
+    ) => {
+        $crate::Switch {
+            init: concat!(
                 "  ", $first, $(", ", $rest,)*
                 $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
                 $crate::__internal!(@doc-tail $($doc)*)
             ),
-            &[$($doc,)*]
-        ));
+            docs: &[$($doc,)*]
+        }
+    };
 
-        $crate::__internal!(@switch-help $switches, $($tail)*);
-    }};
+    // A branch in a help generator.
+    (@switch-help $( $(#[doc = $doc:literal])* [$($branch:tt)*] $(if $cond:expr)? => $block:block)*) => {
+        &[$($crate::__internal!(@switch-help $($doc)* [$($branch)*])),*]
+    };
 
     // The empty condition.
     (@cond) => { true };
@@ -860,7 +843,7 @@ macro_rules! __internal {
     (@branch
         $switch:ident, $it:ident,
         $(#[$($meta:tt)*])*
-        $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
+        [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*] $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
         match std::convert::AsRef::<str>::as_ref(&$switch) {

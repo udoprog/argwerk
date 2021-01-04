@@ -1,15 +1,10 @@
 use std::fmt;
 
-pub struct Doc {
-    init: &'static str,
-    docs: &'static [&'static str],
-}
-
-impl Doc {
-    /// Construct new switch documentation.
-    pub const fn new(init: &'static str, docs: &'static [&'static str]) -> Self {
-        Self { init, docs }
-    }
+pub struct Switch {
+    #[doc(hidden)]
+    pub init: &'static str,
+    /// The documentation comments that were associated with the switch.
+    pub docs: &'static [&'static str],
 }
 
 /// Helper to format a documentation snippet.
@@ -54,50 +49,59 @@ impl fmt::Display for DocFmt<'_> {
 
 /// Helper that can be formatted into documentation text.
 pub struct Help {
-    usage: &'static str,
-    docs: &'static [&'static str],
-    switches: Box<[Doc]>,
-    width: usize,
+    /// The usage specifier used.
+    pub usage: &'static str,
+    /// The documentation strings.
+    pub docs: &'static [&'static str],
+    /// Switches associated with the current command.
+    pub switches: &'static [Switch],
 }
 
 impl Help {
-    /// Construct a new help generator.
-    pub const fn new(
-        usage: &'static str,
-        docs: &'static [&'static str],
-        width: usize,
-        switches: Box<[Doc]>,
-    ) -> Self {
-        Self {
-            usage,
-            docs,
-            switches,
-            width,
-        }
+    /// Format the help with the given config.
+    pub fn with_config(&self, width: usize) -> impl fmt::Display + '_ {
+        WithConfig { help: self, width }
+    }
+
+    /// Internal helper to format the help with the default config.
+    fn with_default(&self) -> impl fmt::Display + '_ {
+        self.with_config(80)
     }
 }
 
 impl fmt::Display for Help {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Usage: {name}", name = self.usage)?;
+        self.with_default().fmt(f)
+    }
+}
 
-        if !self.docs.is_empty() {
-            writeln!(f, "{}", DocFmt::new("", &self.docs, self.width))?;
+struct WithConfig<'a> {
+    help: &'a Help,
+    width: usize,
+}
+
+impl<'a> fmt::Display for WithConfig<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Usage: {name}", name = self.help.usage)?;
+
+        if !self.help.docs.is_empty() {
+            writeln!(f, "{}", DocFmt::new("", &self.help.docs, self.width))?;
         }
 
         writeln!(f)?;
 
         let init_len = self
+            .help
             .switches
             .iter()
             .map(|d| d.init.len())
             .max()
             .unwrap_or_default();
 
-        if !self.switches.is_empty() {
+        if !self.help.switches.is_empty() {
             writeln!(f, "Options:")?;
 
-            for d in self.switches.as_ref() {
+            for d in self.help.switches {
                 writeln!(
                     f,
                     "{}",

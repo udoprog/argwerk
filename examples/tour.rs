@@ -15,22 +15,22 @@ fn main() -> Result<(), argwerk::Error> {
         ///    * All the available switches.
         ///    * All the available positional arguments.
         ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
-        "-h" | "--help" => {
+        ["-h" | "--help"] => {
             help = true;
             Ok(())
         }
         /// Limit the number of things by <n>.
-        "--limit" | "-l", n => {
+        ["--limit" | "-l", n] => {
             limit = str::parse(&n)?;
             Ok(())
         }
         /// Write to the file specified by <path>.
-        "--file", path if !file.is_some() => {
+        ["--file", path] if !file.is_some() => {
             file = Some(path);
             Ok(())
         }
         /// Read from the specified input.
-        "--input", #[option] path => {
+        ["--input", #[option] path] => {
             input = path;
             Ok(())
         }
