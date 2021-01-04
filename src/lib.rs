@@ -23,20 +23,20 @@
 //!   unicode is passed into it in accordance with [std::env::args].
 //!
 //! For how to use, see the documentation of [argwerk::define] and
-//! [argwerk::parse].
+//! [argwerk::args].
 //!
 //! # Examples
 //!
 //! > This is available as a runnable example:
 //! > ```sh
-//! > cargo run --example tour
+//! > cargo run --example tour -- --help
 //! > ```
 //!
-//! ```rust,should_panic
-//! # fn main() -> anyhow::Result<()> {
-//! let args = argwerk::parse! {
+//! ```rust
+//! argwerk::define! {
 //!     /// A command touring the capabilities of argwerk.
-//!     "tour [-h]" {
+//!     #[usage = "tour [-h]"]
+//!     struct Args {
 //!         help: bool,
 //!         #[required = "--file must be specified"]
 //!         file: String,
@@ -50,9 +50,9 @@
 //!     /// This includes:
 //!     ///    * All the available switches.
 //!     ///    * All the available positional arguments.
-//!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly //!long.
+//!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 //!     ["-h" | "--help"] => {
-//!         println!("{}", HELP);
+//!         println!("{}", Args::help());
 //!         help = true;
 //!     }
 //!     /// Limit the number of things by <n> (default: 10).
@@ -74,14 +74,16 @@
 //!         positional = Some((foo, bar));
 //!         rest = args;
 //!     }
-//! }?;
+//! }
 //!
+//! # fn main() -> anyhow::Result<()> {
+//! let args = Args::parse(vec!["--file", "foo.txt", "--input", "-"])?;
 //! dbg!(args);
 //! # Ok(()) }
 //! ```
 //!
 //! [argwerk::define]: https://docs.rs/argwerk/0/argwerk/macro.define.html
-//! [argwerk::parse]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
+//! [argwerk::args]: https://docs.rs/argwerk/0/argwerk/macro.args.html
 //! [clap]: https://docs.rs/clap
 //! [ok_or_else]: https://doc.rust-lang.org/std/option/enum.Option.html#method.ok_or_else
 //! [OsString]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
@@ -693,9 +695,8 @@ macro_rules! define {
 /// # Examples
 ///
 /// ```rust
-///
 /// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
+/// let args = argwerk::args! {
 ///     /// A simple test command.
 ///     "command [-h]" {
 ///         help: bool,
@@ -713,7 +714,7 @@ macro_rules! define {
 /// # Ok(()) }
 /// ```
 #[macro_export]
-macro_rules! parse {
+macro_rules! args {
     (
         $(#[doc = $doc:literal])*
         $usage:literal { $($body:tt)* }
@@ -738,7 +739,7 @@ macro_rules! parse {
     }};
 }
 
-/// Internal implementation details of the [parse] macro.
+/// Internal implementation details of the [args] macro.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __impl {
