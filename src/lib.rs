@@ -619,7 +619,7 @@ macro_rules! __internal {
             $($crate::__internal!(@field $field, $ty $(= $expr)*);)*
 
             while let Some(__argwerk_arg) = $it.next() {
-                $crate::__internal!(@branch __argwerk_arg, $it, $($config)*);
+                $crate::__internal!(@branches __argwerk_arg, $it, $($config)*);
 
                 if $crate::__internal!(@is-switch &__argwerk_arg) {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
@@ -805,18 +805,24 @@ macro_rules! __internal {
     // An expression condition.
     (@cond $expr:expr) => { $expr };
 
-    // Empty branch expansion.
-    (@branch $arg:ident, $it:ident,) => {};
+    // Expansion for all branches.
+    (@branches $switch:ident, $it:ident,
+        $(
+            $(#[doc = $doc:literal])*
+            [$($config:tt)*]
+            $(if $cond:expr)? => $block:block
+        )*
+    ) => {{
+        $($crate::__internal!(@branch $switch, $it, [ $($config)* ] $(if $cond)* => $block);)*
+    }};
 
     // Match positional arguments.
     (@branch
         $switch:ident, $it:ident,
-        $(#[doc = $doc:literal])*
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
-        $($tail:tt)*
     ) => {
-        if argwerk::__internal!(@cond $($cond)*) {
+        if $crate::__internal!(@cond $($cond)*) {
             let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
 
             let $first = $crate::__internal!(@first-positional $(#[$($first_meta)*])* $switch, $it);
@@ -835,16 +841,12 @@ macro_rules! __internal {
 
             continue;
         }
-
-        $crate::__internal!(@branch $switch, $it, $($tail)*);
     };
 
     // A single branch expansion.
     (@branch
         $switch:ident, $it:ident,
-        $(#[$($meta:tt)*])*
         [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*] $(if $cond:expr)? => $block:block
-        $($tail:tt)*
     ) => {
         match std::convert::AsRef::<str>::as_ref(&$switch) {
             $first $( | $rest)* $(if $cond)* => {
@@ -865,7 +867,5 @@ macro_rules! __internal {
             }
             _ => (),
         }
-
-        $crate::__internal!(@branch $switch, $it, $($tail)*);
     };
 }
