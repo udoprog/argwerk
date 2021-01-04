@@ -1,8 +1,8 @@
 use std::fmt;
 
 struct Doc {
-    init: Box<str>,
-    docs: Box<[&'static str]>,
+    init: &'static str,
+    docs: &'static [&'static str],
 }
 
 /// Helper to format a documentation snippet.
@@ -48,42 +48,28 @@ impl fmt::Display for DocFmt<'_> {
 /// Helper that can be formatted into documentation text.
 pub struct Help {
     usage: &'static str,
-    docs: Box<[&'static str]>,
+    docs: &'static [&'static str],
     switches: Vec<Doc>,
     width: usize,
-    init: String,
     init_len: usize,
 }
 
 impl Help {
     /// Construct a new help generator.
-    pub fn new(usage: &'static str, docs: Box<[&'static str]>, width: usize) -> Self {
+    pub fn new(usage: &'static str, docs: &'static [&'static str], width: usize) -> Self {
         Self {
             usage,
             docs,
             switches: Vec::new(),
             width,
-            init: String::new(),
             init_len: 0,
         }
     }
 
     /// Add the documentation for a single switch.
-    pub fn switch(&mut self, docs: Box<[&'static str]>) {
-        if !docs.is_empty() {
-            self.init.push_str("  ");
-        }
-
-        self.init_len = usize::max(self.init_len, self.init.len());
-        let init = self.init.clone().into();
+    pub fn switch(&mut self, init: &'static str, docs: &'static [&'static str]) {
+        self.init_len = usize::max(self.init_len, init.len());
         self.switches.push(Doc { init, docs })
-    }
-
-    /// Get a mutable work buffer for the prefix.
-    #[doc(hidden)]
-    pub fn switch_init_mut(&mut self) -> &mut String {
-        self.init.clear();
-        &mut self.init
     }
 }
 

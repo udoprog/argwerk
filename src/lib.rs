@@ -582,28 +582,28 @@ pub enum ErrorKind {
 /// ```
 #[macro_export]
 macro_rules! parse {
-    // Parse with a custom iterator.
+    // Parse from a custom iterator.
     (
-        $it:expr => $($rest:tt)*
+        $it:expr => $($config:tt)*
     ) => {{
-        let mut __argwerk_it = ::std::iter::IntoIterator::into_iter($it).peekable();
-        $crate::__parse_inner!(__argwerk_it, $($rest)*)
+        let mut __argwerk_it = ::std::iter::IntoIterator::into_iter($it);
+        $crate::__internal!(__argwerk_it, $($config)*)
     }};
 
-    // Parse with `std::env::args()`.
+    // Parse from `std::env::args()`.
     (
-        $($rest:tt)*
+        $($config:tt)*
     ) => {{
-        let mut __argwerk_it = ::std::env::args().peekable();
+        let mut __argwerk_it = ::std::env::args();
         __argwerk_it.next();
-        $crate::__parse_inner!(__argwerk_it, $($rest)*)
+        $crate::__internal!(__argwerk_it, $($config)*)
     }};
 }
 
 /// Internal implementation details of the [parse] macro.
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __parse_inner {
+macro_rules! __internal {
     // The guts of the parser.
     (
         $it:ident,
@@ -613,13 +613,15 @@ macro_rules! __parse_inner {
         }
         $($tt:tt)*
     ) => {{
+        let mut $it = $it.peekable();
+
         let mut parser = || {
-            $($crate::__parse_inner!(@field $field, $ty $(= $expr)*);)*
+            $($crate::__internal!(@field $field, $ty $(= $expr)*);)*
 
             while let Some(__argwerk_arg) = $it.next() {
-                $crate::__parse_inner!(@branch __argwerk_arg, $it, $($tt)*);
+                $crate::__internal!(@branch __argwerk_arg, $it, $($tt)*);
 
-                if $crate::__parse_inner!(@is-switch &__argwerk_arg) {
+                if $crate::__internal!(@is-switch &__argwerk_arg) {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
                         switch: __argwerk_arg.into()
                     }));
@@ -643,40 +645,37 @@ macro_rules! __parse_inner {
                 /// Return a formatter that formats to the help string with the
                 /// given character width of this argument structure.
                 fn help_with(&self, width: usize) -> impl ::std::fmt::Display {
-                    let mut help = ::argwerk::helpers::Help::new($usage, vec![$($doc,)*].into(), width);
-                    $crate::__parse_inner!(@help help, $($tt)*);
+                    let mut help = ::argwerk::helpers::Help::new($usage, &[$($doc,)*], width);
+                    $crate::__internal!(@switch-help help, $($tt)*);
                     return help;
                 }
             }
 
-            Ok(Args {
-                $($field,)*
-            })
+            Ok(Args { $($field,)* })
         };
 
         parser()
     }};
 
     // Parse the rest of the available arguments.
-    (@doc #[rest] $init:ident, $argument:ident) => {
-        $init.push_str("<");
-        $init.push_str(stringify!($argument));
-        $init.push_str("..>");
+    (@doc #[rest] $argument:ident) => {
+        concat!("<", stringify!($argument), "..>");
     };
 
     // Parse an optional argument.
-    (@doc #[option] $init:ident, $argument:ident) => {
-        $init.push_str("[");
-        $init.push_str(stringify!($argument));
-        $init.push_str("]");
+    (@doc #[option] $argument:ident) => {
+        concat!("[", stringify!($argument), "]");
     };
 
     // Parse as its argument.
-    (@doc $init:ident, $argument:ident) => {
-        $init.push_str("<");
-        $init.push_str(stringify!($argument));
-        $init.push_str(">");
+    (@doc $argument:ident) => {
+        concat!("<", stringify!($argument), ">");
     };
+
+    // Generate the doc tail, which is specified in case any doc comments are
+    // available.
+    (@doc-tail) => { "" };
+    (@doc-tail $($tt:tt)+) => { "  " };
 
     // Parse the rest of the available arguments.
     (@positional #[rest] $it:ident, $arg:ident) => {
@@ -686,7 +685,7 @@ macro_rules! __parse_inner {
     // Parse an optional argument.
     (@positional #[option] $it:ident, $arg:ident) => {
         match $it.peek() {
-            Some(n) => if !$crate::__parse_inner!(@is-switch n) {
+            Some(n) => if !$crate::__internal!(@is-switch n) {
                 $it.next()
             } else {
                 None
@@ -752,7 +751,7 @@ macro_rules! __parse_inner {
     // Parse an optional argument.
     (@switch-argument #[option] $switch:ident, $it:ident, $arg:ident) => {
         match $it.peek() {
-            Some(n) => if !$crate::__parse_inner!(@is-switch n) {
+            Some(n) => if !$crate::__internal!(@is-switch n) {
                 $it.next()
             } else {
                 None
@@ -770,56 +769,39 @@ macro_rules! __parse_inner {
     };
 
     // Empty help generator.
-    (@help $help:ident,) => {};
+    (@switch-help $help:ident,) => {};
 
     // Generate help for positional parameters.
-    (@help
+    (@switch-help
         $help:ident,
         $(#[doc = $doc:literal])*
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        let init = $help.switch_init_mut();
+        $help.switch(concat!(
+            "  ", $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
+            $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
+            $crate::__internal!(@doc-tail $($doc)*)
+        ), &[$($doc,)*]);
 
-        init.push_str("  ");
-
-        $crate::__parse_inner!(@doc $(#[$($first_meta)*])* init, $first);
-
-        $(
-            init.push_str(" ");
-            $crate::__parse_inner!(@doc $(#[$($rest_meta)*])* init, $rest);
-        )*
-
-        $help.switch(vec![$($doc,)*].into());
-        $crate::__parse_inner!(@help $help, $($tail)*);
+        $crate::__internal!(@switch-help $help, $($tail)*);
     }};
 
     // A branch in a help generator.
-    (@help
+    (@switch-help
         $help:ident,
         $(#[doc = $doc:literal])*
         $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        let init = $help.switch_init_mut();
+        $help.switch(concat!(
+            "  ", $first, $(", ", $rest,)*
+            $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
+            $crate::__internal!(@doc-tail $($doc)*)
+        ), &[$($doc,)*][..]);
 
-        init.clear();
-        init.push_str("  ");
-        init.push_str($first);
-
-        $(
-            init.push_str(", ");
-            init.push_str($rest);
-        )*
-
-        $(
-            init.push_str(" ");
-            $crate::__parse_inner!(@doc $(#[$($arg_meta)*])* init, $arg);
-        )*
-
-        $help.switch(vec![$($doc,)*].into());
-        $crate::__parse_inner!(@help $help, $($tail)*);
+        $crate::__internal!(@switch-help $help, $($tail)*);
     }};
 
     // The empty condition.
@@ -839,11 +821,11 @@ macro_rules! __parse_inner {
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {
-        if argwerk::__parse_inner!(@cond $($cond)*) {
+        if argwerk::__internal!(@cond $($cond)*) {
             let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
 
-            let $first = $crate::__parse_inner!(@first-positional $(#[$($first_meta)*])* $switch, $it);
-            $(let $rest = $crate::__parse_inner!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
+            let $first = $crate::__internal!(@first-positional $(#[$($first_meta)*])* $switch, $it);
+            $(let $rest = $crate::__internal!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                 $block
@@ -859,7 +841,7 @@ macro_rules! __parse_inner {
             continue;
         }
 
-        $crate::__parse_inner!(@branch $switch, $it, $($tail)*);
+        $crate::__internal!(@branch $switch, $it, $($tail)*);
     };
 
     // A single branch expansion.
@@ -871,7 +853,7 @@ macro_rules! __parse_inner {
     ) => {
         match std::convert::AsRef::<str>::as_ref(&$switch) {
             $first $( | $rest)* $(if $cond)* => {
-                $(let $arg = $crate::__parse_inner!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
+                $(let $arg = $crate::__internal!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
 
                 let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                     $block
@@ -889,6 +871,6 @@ macro_rules! __parse_inner {
             _ => (),
         }
 
-        $crate::__parse_inner!(@branch $switch, $it, $($tail)*);
+        $crate::__internal!(@branch $switch, $it, $($tail)*);
     };
 }
