@@ -99,7 +99,7 @@ pub mod helpers;
 
 use std::error;
 
-pub use self::helpers::{Help, Switch};
+pub use self::helpers::{Help, HelpFormat, Switch};
 
 /// An error raised by argwerk.
 #[derive(Debug)]
@@ -422,8 +422,8 @@ pub enum ErrorKind {
 /// (e.g. `/// Hello World`). These are automatically wrapped to 80 characters.
 ///
 /// Documentation can be formatted with the `help` associated function, which
-/// returns a static instance of [Help]. This can be further configured using
-/// functions such as [Help::with_width].
+/// returns a static instance of [Help]. This can be further customized using
+/// [Help::format].
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -444,7 +444,7 @@ pub enum ErrorKind {
 /// }?;
 ///
 /// if args.help {
-///     println!("{}", args.help().with_width(120));
+///     println!("{}", args.help().format().width(120));
 /// }
 /// # Ok(()) }
 /// ```
@@ -746,7 +746,7 @@ macro_rules! __internal {
     ) => {
         $crate::Switch {
             usage: concat!(
-                "  ", $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
+                $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
                 $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
             ),
             docs: &[$($doc,)*]
@@ -760,7 +760,7 @@ macro_rules! __internal {
     ) => {
         $crate::Switch {
             usage: concat!(
-                "  ", $first, $(", ", $rest,)*
+                $first, $(", ", $rest,)*
                 $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
             ),
             docs: &[$($doc,)*]

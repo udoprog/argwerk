@@ -1,7 +1,15 @@
+//! Helper module for the macros.
+//!
+//! Unless something is specifically re-exported, all implementation details are
+//! expected to be private and might change between minor releases.
+
 use std::error;
 use std::fmt;
 
-/// Padding to use between switch summary and help text.
+/// Default width to use when wrapping lines.
+const WIDTH: usize = 80;
+
+/// Default padding to use between switch summary and help text.
 const PADDING: usize = 2;
 
 /// A boxed error type.
@@ -81,38 +89,60 @@ impl Help {
     ///     }
     /// }?;
     ///
-    /// let formatted = format!("{}", args.help().with_width(120));
+    /// let formatted = format!("{}", args.help().format().width(120));
     /// assert!(formatted.split('\n').any(|line| line.len() > 80));
     /// assert!(formatted.split('\n').all(|line| line.len() < 120));
     /// # Ok(()) }
     /// ```
-    pub fn with_width(&self, width: usize) -> impl fmt::Display + '_ {
-        WithConfig { help: self, width }
-    }
-
-    /// Internal helper to format the help with the default config.
-    fn with_default(&self) -> impl fmt::Display + '_ {
-        self.with_width(80)
+    pub fn format(&self) -> HelpFormat {
+        HelpFormat {
+            help: self,
+            width: WIDTH,
+            padding: PADDING,
+        }
     }
 }
 
 impl fmt::Display for Help {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.with_default().fmt(f)
+        self.format().fmt(f)
     }
 }
 
-struct WithConfig<'a> {
+/// A wrapper to format the help message with custom parameters.
+///
+/// Constructed through [Help::format].
+pub struct HelpFormat<'a> {
     help: &'a Help,
     width: usize,
+    padding: usize,
 }
 
-impl<'a> fmt::Display for WithConfig<'a> {
+impl HelpFormat<'_> {
+    /// Configure the width to use for help text.
+    pub fn width(self, width: usize) -> Self {
+        Self { width, ..self }
+    }
+
+    /// Configure the padding to use when formatting help.
+    ///
+    /// This determines the indentation of options and the distances between
+    /// options and help text.
+    pub fn padding(self, padding: usize) -> Self {
+        Self { padding, ..self }
+    }
+}
+
+impl<'a> fmt::Display for HelpFormat<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Usage: {name}", name = self.help.usage)?;
 
         if !self.help.docs.is_empty() {
-            writeln!(f, "{}", TextWrap::new("", &self.help.docs, self.width))?;
+            writeln!(
+                f,
+                "{}",
+                TextWrap::new("", &self.help.docs, self.width, self.padding)
+            )?;
         }
 
         writeln!(f)?;
@@ -125,7 +155,7 @@ impl<'a> fmt::Display for WithConfig<'a> {
                 if s.docs.is_empty() {
                     s.usage.len()
                 } else {
-                    s.usage.len() + PADDING
+                    s.usage.len() + self.padding
                 }
             })
             .max()
@@ -138,7 +168,7 @@ impl<'a> fmt::Display for WithConfig<'a> {
                 writeln!(
                     f,
                     "{}",
-                    TextWrap::switch(&d.usage, &d.docs, self.width, usage_len)
+                    TextWrap::switch(&d.usage, &d.docs, self.width, self.padding, usage_len)
                 )?;
             }
         }
@@ -152,24 +182,33 @@ struct TextWrap<'a> {
     init: &'a str,
     docs: &'a [&'static str],
     width: usize,
+    padding: usize,
     init_len: Option<usize>,
 }
 
 impl<'a> TextWrap<'a> {
-    fn new(init: &'a str, docs: &'a [&'static str], width: usize) -> Self {
+    fn new(init: &'a str, docs: &'a [&'static str], width: usize, padding: usize) -> Self {
         Self {
             init,
             docs,
             width,
+            padding,
             init_len: None,
         }
     }
 
-    fn switch(init: &'a str, docs: &'a [&'static str], width: usize, init_len: usize) -> Self {
+    fn switch(
+        init: &'a str,
+        docs: &'a [&'static str],
+        width: usize,
+        padding: usize,
+        init_len: usize,
+    ) -> Self {
         TextWrap {
             init,
             docs,
             width,
+            padding,
             init_len: Some(init_len),
         }
     }
@@ -178,7 +217,14 @@ impl<'a> TextWrap<'a> {
 impl fmt::Display for TextWrap<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.docs.is_empty() {
-            textwrap(f, self.docs, self.width, &self.init, self.init_len)?;
+            textwrap(
+                f,
+                self.docs,
+                self.width,
+                self.padding,
+                &self.init,
+                self.init_len,
+            )?;
         } else {
             write!(f, "{}", self.init)?;
         }
@@ -192,6 +238,7 @@ fn textwrap<I>(
     f: &mut fmt::Formatter<'_>,
     lines: I,
     width: usize,
+    padding: usize,
     init: &str,
     init_len: Option<usize>,
 ) -> fmt::Result
@@ -201,7 +248,7 @@ where
 {
     let mut it = lines.into_iter().peekable();
 
-    let fill = init_len.unwrap_or(init.len());
+    let fill = init_len.unwrap_or(init.len()) + padding;
     let mut init = Some(init);
 
     let trim = match it.peek() {
@@ -262,9 +309,15 @@ where
                 space_span = Some((start, start + leap));
             }
 
-            let init = init.take().unwrap_or_default();
-            f.write_str(init)?;
-            fill_spaces(f, fill.saturating_sub(init.len()))?;
+            let init_len = if let Some(init) = init.take() {
+                fill_spaces(f, padding)?;
+                f.write_str(init)?;
+                padding + init.len()
+            } else {
+                0
+            };
+
+            fill_spaces(f, fill.saturating_sub(1).saturating_sub(init_len))?;
 
             if let Some((start, end)) = space_span {
                 writeln!(f, "{}", &line[..start])?;

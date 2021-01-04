@@ -40,7 +40,7 @@ fn main() -> Result<(), argwerk::Error> {
     }?;
 
     if args.help {
-        println!("{}", args.help().with_width(120));
+        println!("{}", args.help().format().width(100));
     }
 
     dbg!(args);
