@@ -11,5 +11,5 @@ repository = "https://github.com/udoprog/argwerk"
 homepage = "https://github.com/udoprog/argwerk"
 documentation = "https://docs.rs/argwerk"
 description = """
-Helpers for fusing asynchronous computations.
+Simple command-line parser through a declarative macro.
 """

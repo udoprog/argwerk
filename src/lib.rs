@@ -2,16 +2,16 @@
 //! [![Crates](https://img.shields.io/crates/v/argwerk.svg)](https://crates.io/crates/argwerk)
 //! [![Actions Status](https://github.com/udoprog/argwerk/workflows/Rust/badge.svg)](https://github.com/udoprog/argwerk/actions)
 //!
-//! Helper utility for parsing simple commandline arguments.
+//! Simple command-line parser through a declarative macro.
 //!
-//! This is **not** intended to be a complete commandline parser library.
+//! This is **not** intended to be a complete command-line parser library.
 //! Instead this can be used as an alternative quick-and-dirty approach that can
 //! be cheaply incorporated into a tool.
 //!
-//! For a more complete commandline parsing library, use [clap].
+//! For a more complete command-line parsing library, use [clap].
 //!
 //! We provide:
-//! * A dependency-free commandline parsing framework using declarative macros.
+//! * A dependency-free command-line parsing framework using declarative macros.
 //! * A flexible mechanism for parsing.
 //! * Formatting of decent looking help messages.
 //!
@@ -270,7 +270,7 @@ pub enum ErrorKind {
     },
 }
 
-/// Parse commandline arguments.
+/// Parse command-line arguments.
 ///
 /// This will generate an anonymous structure containing the arguments defined
 /// which is returned by the macro.
