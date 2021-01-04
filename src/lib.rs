@@ -611,7 +611,7 @@ macro_rules! __internal {
         $usage:literal {
             $($field:ident : $ty:ty $(= $expr:expr)?),* $(,)?
         }
-        $($tt:tt)*
+        $($config:tt)*
     ) => {{
         let mut $it = $it.peekable();
 
@@ -619,7 +619,7 @@ macro_rules! __internal {
             $($crate::__internal!(@field $field, $ty $(= $expr)*);)*
 
             while let Some(__argwerk_arg) = $it.next() {
-                $crate::__internal!(@branch __argwerk_arg, $it, $($tt)*);
+                $crate::__internal!(@branch __argwerk_arg, $it, $($config)*);
 
                 if $crate::__internal!(@is-switch &__argwerk_arg) {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
@@ -645,9 +645,15 @@ macro_rules! __internal {
                 /// Return a formatter that formats to the help string with the
                 /// given character width of this argument structure.
                 fn help_with(&self, width: usize) -> impl ::std::fmt::Display {
-                    let mut help = ::argwerk::helpers::Help::new($usage, &[$($doc,)*], width);
-                    $crate::__internal!(@switch-help help, $($tt)*);
-                    return help;
+                    let mut __argwerk_switches = Vec::new();
+                    $crate::__internal!(@switch-help __argwerk_switches, $($config)*);
+
+                    ::argwerk::helpers::Help::new(
+                        $usage,
+                        &[$($doc,)*],
+                        width,
+                        __argwerk_switches.into(),
+                    )
                 }
             }
 
@@ -769,39 +775,45 @@ macro_rules! __internal {
     };
 
     // Empty help generator.
-    (@switch-help $help:ident,) => {};
+    (@switch-help $switches:ident,) => {};
 
     // Generate help for positional parameters.
     (@switch-help
-        $help:ident,
+        $switches:ident,
         $(#[doc = $doc:literal])*
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        $help.switch(concat!(
-            "  ", $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
-            $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
-            $crate::__internal!(@doc-tail $($doc)*)
-        ), &[$($doc,)*]);
+        $switches.push($crate::helpers::Doc::new(
+            concat!(
+                "  ", $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
+                $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
+                $crate::__internal!(@doc-tail $($doc)*)
+            ),
+            &[$($doc,)*]
+        ));
 
-        $crate::__internal!(@switch-help $help, $($tail)*);
+        $crate::__internal!(@switch-help $switches, $($tail)*);
     }};
 
     // A branch in a help generator.
     (@switch-help
-        $help:ident,
+        $switches:ident,
         $(#[doc = $doc:literal])*
         $first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)* $(if $cond:expr)? => $block:block
         $($tail:tt)*
     ) => {{
-        $help.switch(concat!(
-            "  ", $first, $(", ", $rest,)*
-            $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
-            $crate::__internal!(@doc-tail $($doc)*)
-        ), &[$($doc,)*][..]);
+        $switches.push($crate::helpers::Doc::new(
+            concat!(
+                "  ", $first, $(", ", $rest,)*
+                $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
+                $crate::__internal!(@doc-tail $($doc)*)
+            ),
+            &[$($doc,)*]
+        ));
 
-        $crate::__internal!(@switch-help $help, $($tail)*);
+        $crate::__internal!(@switch-help $switches, $($tail)*);
     }};
 
     // The empty condition.

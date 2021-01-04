@@ -1,8 +1,15 @@
 use std::fmt;
 
-struct Doc {
+pub struct Doc {
     init: &'static str,
     docs: &'static [&'static str],
+}
+
+impl Doc {
+    /// Construct new switch documentation.
+    pub const fn new(init: &'static str, docs: &'static [&'static str]) -> Self {
+        Self { init, docs }
+    }
 }
 
 /// Helper to format a documentation snippet.
@@ -49,27 +56,24 @@ impl fmt::Display for DocFmt<'_> {
 pub struct Help {
     usage: &'static str,
     docs: &'static [&'static str],
-    switches: Vec<Doc>,
+    switches: Box<[Doc]>,
     width: usize,
-    init_len: usize,
 }
 
 impl Help {
     /// Construct a new help generator.
-    pub fn new(usage: &'static str, docs: &'static [&'static str], width: usize) -> Self {
+    pub const fn new(
+        usage: &'static str,
+        docs: &'static [&'static str],
+        width: usize,
+        switches: Box<[Doc]>,
+    ) -> Self {
         Self {
             usage,
             docs,
-            switches: Vec::new(),
+            switches,
             width,
-            init_len: 0,
         }
-    }
-
-    /// Add the documentation for a single switch.
-    pub fn switch(&mut self, init: &'static str, docs: &'static [&'static str]) {
-        self.init_len = usize::max(self.init_len, init.len());
-        self.switches.push(Doc { init, docs })
     }
 }
 
@@ -83,14 +87,21 @@ impl fmt::Display for Help {
 
         writeln!(f)?;
 
+        let init_len = self
+            .switches
+            .iter()
+            .map(|d| d.init.len())
+            .max()
+            .unwrap_or_default();
+
         if !self.switches.is_empty() {
             writeln!(f, "Options:")?;
 
-            for d in &self.switches {
+            for d in self.switches.as_ref() {
                 writeln!(
                     f,
                     "{}",
-                    DocFmt::switch(&d.init, &d.docs, self.width, self.init_len)
+                    DocFmt::switch(&d.init, &d.docs, self.width, init_len)
                 )?;
             }
         }
