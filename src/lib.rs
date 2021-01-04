@@ -18,8 +18,6 @@
 //! We *do not* provide:
 //! * As-close-to correct line wrapping with wide unicode characters as possible
 //!   (see [textwrap]).
-//! * Required switches and arguments. If your switch is required, you'll have
-//!   to [ok_or_else] it yourself from an `Option<T>`.
 //! * Complex command structures like subcommands.
 //! * Parsing into [OsString]s. The default parser will panic in case not valid
 //!   unicode is passed into it in accordance with [std::env::args].
@@ -138,6 +136,10 @@ impl fmt::Display for Error {
             ErrorKind::MissingPositional { name } => {
                 write!(f, "missing argument `{}`", name)
             }
+            ErrorKind::MissingRequired { name, reason } => match reason {
+                Some(reason) => write!(f, "missing required argument: {}", reason),
+                None => write!(f, "missing required argument `{}`", name),
+            },
             ErrorKind::Error { name, error } => {
                 write!(f, "error in argument `{}`: {}", name, error)
             }
@@ -254,6 +256,34 @@ pub enum ErrorKind {
     MissingPositional {
         /// The name of the argument missing like `path` in `<path>`.
         name: &'static str,
+    },
+    /// When a positional argument is missing.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// argwerk::define! {
+    ///     struct Args {
+    ///         #[required = "--name must be used"]
+    ///         name: String,
+    ///     }
+    ///     ["--name", n] => {
+    ///         name = Some(n);
+    ///     }
+    ///     [rest] => {}
+    /// }
+    ///
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = Args::parse(vec!["foo"]).unwrap_err();
+    ///
+    /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingRequired { name: "name", .. }));
+    /// # Ok(()) }
+    /// ```
+    MissingRequired {
+        /// The name of the required variable that is missing.
+        name: &'static str,
+        /// The reason that the required argument was missing.
+        reason: Option<&'static str>,
     },
     /// When an error has been raised while processing an argument, typically
     /// when something is being parsed.
@@ -508,6 +538,36 @@ pub enum ErrorKind {
 /// "overly long" markdown list bullet above wraps correctly. Instead of
 /// wrapping at the `*`, it wraps to the first alphanumeric character after it.
 ///
+/// ## Required arguments using `#[required]`
+///
+/// You can specify required arguments using the `#[required]` attribute in the
+/// field specification. Fields which are marked as `#[required]` have the type
+/// [Option\<T\>][Option]. If the field is left as uninitialized (`None`) once
+/// all arguments have been parsed will cause an error to be raised. See
+/// [ErrorKind::MissingRequired].
+///
+/// A reason that the argument is required can be optionally provided by doing
+/// `#[required = "--name is required"]`.
+///
+/// # Examples
+///
+/// ```rust
+/// argwerk::define! {
+///     struct Args {
+///         #[required = "--name must be used"]
+///         name: String,
+///     }
+///     ["--name", n] => {
+///         name = Some(n);
+///     }
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(vec!["--name", "John"])?;
+/// assert_eq!(args.name, "John");
+/// # Ok(()) }
+/// ```
+///
 /// ## Capture all available arguments using `#[rest]`
 ///
 /// You can write a branch that receives all available arguments using the
@@ -688,7 +748,7 @@ macro_rules! __impl {
     (
         $(#[usage = $usage:literal])*
         $vis:vis struct $name:ident {
-            $($field:ident: $ty:ty $(= $expr:expr)?),* $(,)?
+            $( $(#[$($field_m:tt)*])* $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
         }
         $($config:tt)*
     ) => {
@@ -712,13 +772,15 @@ macro_rules! __impl {
                 String: From<I::Item>,
             {
                 let mut it = it.into_iter().peekable();
-                $(let mut $field: $ty = $crate::__impl!(@init $($expr)*);)*
+                $($crate::__impl!(@init $(#[$($field_m)*])* $field, $ty $(, $expr)*);)*
 
                 while let Some(__argwerk_item) = it.next() {
                     $crate::__impl!(@branches __argwerk_item, it, $($config)*);
                 }
 
-                Ok(Self { $($field),* })
+                Ok(Self {
+                    $($field: $crate::__impl!(@assign $(#[$($field_m)*])* $field)),*
+                })
             }
         }
     };
@@ -748,8 +810,35 @@ macro_rules! __impl {
         concat!("<", stringify!($argument), ">");
     };
 
-    (@init) => { Default::default() };
-    (@init $expr:expr) => { $expr };
+    (@init $field:ident, $ty:ty) => {
+        let mut $field: $ty = Default::default();
+    };
+
+    (@init #[required $(= $reason:literal)?] $field:ident, $ty:ty) => {
+        let mut $field: Option<$ty> = None;
+    };
+
+    (@init $field:ident, $ty:ty, $expr:expr) => {
+        let mut $field: $ty = $expr;
+    };
+
+    (@assign $field:ident) => {
+        $field
+    };
+
+    (@assign #[required $(= $reason:literal)?] $field:ident) => {
+        match $field {
+            Some($field) => $field,
+            None => return Err($crate::Error::new($crate::ErrorKind::MissingRequired {
+                name: stringify!($field),
+                reason: $crate::__impl!(@required $($reason)*),
+            })),
+        }
+    };
+
+    // The missing required argument.
+    (@required) => { None };
+    (@required $reason:literal) => { Some($reason) };
 
     // Generate help for positional branches.
     (@switch-help
