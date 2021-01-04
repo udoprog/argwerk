@@ -7,10 +7,19 @@ use std::error;
 use std::fmt;
 
 /// Default width to use when wrapping lines.
+///
+/// See [HelpFormat::width].
 const WIDTH: usize = 80;
 
 /// Default padding to use between switch summary and help text.
+///
+/// See [HelpFormat::padding].
 const PADDING: usize = 2;
+
+/// Default max usage width to use for switches and arguments.
+///
+/// See [HelpFormat::max_usage].
+const MAX_USAGE: usize = 24;
 
 /// A boxed error type.
 type BoxError = Box<dyn error::Error + Send + Sync + 'static>;
@@ -104,6 +113,7 @@ impl Help {
             help: self,
             width: WIDTH,
             padding: PADDING,
+            max_usage: MAX_USAGE,
         }
     }
 }
@@ -121,6 +131,7 @@ pub struct HelpFormat<'a> {
     help: &'a Help,
     width: usize,
     padding: usize,
+    max_usage: usize,
 }
 
 impl HelpFormat<'_> {
@@ -135,6 +146,16 @@ impl HelpFormat<'_> {
     /// options and help text.
     pub fn padding(self, padding: usize) -> Self {
         Self { padding, ..self }
+    }
+
+    /// Configure the max usage width to use when formatting help.
+    ///
+    /// This determines how wide a usage help is allowed to be before it forces
+    /// the associated documentation to flow to the next line.
+    ///
+    /// Usage help is the `--file, -f <path>` part of each switch and argument.
+    pub fn max_usage(self, max_usage: usize) -> Self {
+        Self { max_usage, ..self }
     }
 }
 
@@ -153,14 +174,17 @@ impl<'a> fmt::Display for HelpFormat<'a> {
             .switches
             .iter()
             .map(|s| {
-                if s.docs.is_empty() {
-                    s.usage.len()
-                } else {
-                    s.usage.len() + self.padding
-                }
+                usize::min(
+                    self.max_usage,
+                    if s.docs.is_empty() {
+                        s.usage.len()
+                    } else {
+                        s.usage.len() + self.padding
+                    },
+                )
             })
             .max()
-            .unwrap_or_default();
+            .unwrap_or(self.max_usage);
 
         if !self.help.switches.is_empty() {
             writeln!(f, "Options:")?;
@@ -217,18 +241,14 @@ impl<'a> TextWrap<'a> {
 
 impl fmt::Display for TextWrap<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.docs.is_empty() {
-            textwrap(
-                f,
-                self.docs,
-                self.width,
-                self.padding,
-                &self.init,
-                self.init_len,
-            )?;
-        } else {
-            write!(f, "{}", self.init)?;
-        }
+        textwrap(
+            f,
+            self.docs,
+            self.width,
+            self.padding,
+            &self.init,
+            self.init_len,
+        )?;
 
         Ok(())
     }
@@ -249,8 +269,25 @@ where
 {
     let mut it = lines.into_iter().peekable();
 
-    let fill = init_len.unwrap_or(init.len()) + padding;
-    let mut init = Some(init);
+    // No documentation lines.
+    if it.peek().is_none() {
+        fill_spaces(f, padding)?;
+        f.write_str(init)?;
+        return Ok(());
+    }
+
+    let init_len = init_len.unwrap_or(init.len());
+
+    // NB: init line is broader than maximum permitted init length.
+    let mut init = if init.len() + padding > init_len {
+        fill_spaces(f, padding)?;
+        writeln!(f, "{}", init)?;
+        None
+    } else {
+        Some(init)
+    };
+
+    let fill = init_len + padding;
 
     let trim = match it.peek() {
         Some(line) => Some(chars_count(line.as_ref(), |c| c == ' ')),

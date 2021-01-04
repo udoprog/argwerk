@@ -32,6 +32,9 @@ argwerk::define! {
     ["--input", #[option] path] => {
         input = path;
     }
+    /// A really long argument that exceeds usage limit and forced the documentation to wrap to the next line.
+    ["--really-really-really-long-argument", thing] => {
+    }
     /// Takes argument at <foo> and <bar>.
     ///
     ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
