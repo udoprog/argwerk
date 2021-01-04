@@ -717,16 +717,6 @@ macro_rules! __impl {
 
                 while let Some(__argwerk_arg) = it.next() {
                     $crate::__impl!(@branches __argwerk_arg, it, $($config)*);
-
-                    if $crate::__impl!(@is-switch &__argwerk_arg) {
-                        return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
-                            switch: __argwerk_arg.into()
-                        }));
-                    } else {
-                        return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
-                            argument: __argwerk_arg.into()
-                        }));
-                    }
                 }
 
                 Ok(Self { $($field,)* })
@@ -873,34 +863,21 @@ macro_rules! __impl {
         }
     };
 
-    // Generate switch help.
+    // Generate switches help.
     (@switches $( $(#[doc = $doc:literal])* [$($branch:tt)*] $(if $cond:expr)? => $block:block)*) => {
         &[$($crate::__impl!(@switch-help $($doc)* [$($branch)*])),*]
     };
 
     // Expansion for all branches.
-    (@branches $switch:ident, $it:ident,
-        $(
-            $(#[doc = $doc:literal])*
-            [$($config:tt)*]
-            $(if $cond:expr)? => $block:block
-        )*
-    ) => {{
-        $($crate::__impl!(@branch $switch, $it, [ $($config)* ] $(if $cond)* => $block);)*
-    }};
-
-    // Match positional arguments.
-    (@branch
+    (@branches
         $switch:ident, $it:ident,
-        [ $(#$first_meta:tt)* $first:ident $(, $(#$rest_meta:tt)* $rest:ident)* ]
-        $(if $cond:expr)? => $block:block
+        $($(#[$_meta:meta])* [$($config:tt)*] $(if $cond:expr)? => $block:block)*
     ) => {
-        match () {
-            _ $(if $cond)* => {
-                let __argwerk_name = $crate::__impl!(@to-str &$switch).into();
+        match $crate::__impl!(@to-str &$switch) {
+            $(__argwerk_name if $crate::__impl!(@pat __argwerk_name, [$($config)*]) $(&& $cond)* => {
+                let __argwerk_name = __argwerk_name.into();
 
-                let $first = $crate::__impl!(@first $(#$first_meta)* $switch, $it);
-                $(let $rest = $crate::__impl!(@positional $(#$rest_meta)* $it, $rest);)*
+                $crate::__impl!(@bindings $switch, $it, [$($config)*]);
 
                 if let Err(error) = (|| $crate::helpers::into_result($block))() {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
@@ -908,33 +885,49 @@ macro_rules! __impl {
                         error
                     }));
                 }
-
-                continue;
+            })*
+            __argwerk_name => {
+                if $crate::__impl!(@is-switch __argwerk_name) {
+                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
+                        switch: __argwerk_name.into()
+                    }));
+                } else {
+                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
+                        argument: __argwerk_name.into()
+                    }));
+                }
             }
-            _ => ()
         }
     };
 
-    // A single branch expansion.
-    (@branch
-        $switch:ident, $it:ident,
-        [$first:literal $(| $rest:literal)* $(, $(#$arg_meta:tt)* $arg:ident)*] $(if $cond:expr)? => $block:block
-    ) => {
-        match $crate::__impl!(@to-str &$switch) {
-            $first $( | $rest)* $(if $cond)* => {
-                $(let $arg = $crate::__impl!(@switch-argument $(#$arg_meta)* $switch, $it, $arg);)*
+    // Generates a branch pattern for positional arguments.
+    (@pat $v:ident, [$(#$first_meta:tt)* $first:ident $(, $(#$rest_meta:tt)* $rest:ident)*]) => {
+        true
+    };
 
-                if let Err(error) = (|| $crate::helpers::into_result($block))() {
-                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                        name: $crate::__impl!(@to-str &$switch).into(),
-                        error
-                    }));
-                }
-
-                continue;
-            }
-            _ => (),
+    // Generates a branch pattern for switches.
+    (@pat $v:ident, [$first:literal $(| $rest:literal)* $(, $(#$arg_meta:tt)* $arg:ident)*]) => {
+        match $v {
+            $first $(| $rest)* => true,
+            _ => false,
         }
+    };
+
+    // Match positional arguments.
+    (@bindings
+        $switch:ident, $it:ident,
+        [$(#$first_meta:tt)* $first:ident $(, $(#$rest_meta:tt)? $rest:ident)*]
+    ) => {
+        let $first = $crate::__impl!(@first $(#$first_meta)* $switch, $it);
+        $(let $rest = $crate::__impl!(@positional $(#$rest_meta)* $it, $rest);)*
+    };
+
+    // A single branch expansion.
+    (@bindings
+        $switch:ident, $it:ident,
+        [$_a:literal $(| $_b:literal)* $(, $(#$arg_meta:tt)? $arg:ident)*]
+    ) => {
+        $(let $arg = $crate::__impl!(@switch-argument $(#$arg_meta)* $switch, $it, $arg);)*
     };
 
     // Get argument as a `&str` through `AsRef<str>`.
