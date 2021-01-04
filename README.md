@@ -4,7 +4,7 @@
 [![Crates](https://img.shields.io/crates/v/argwerk.svg)](https://crates.io/crates/argwerk)
 [![Actions Status](https://github.com/udoprog/argwerk/workflows/Rust/badge.svg)](https://github.com/udoprog/argwerk/actions)
 
-Simple command-line parser through a declarative macro.
+Define a simple command-line parser through a declarative macro.
 
 This is **not** intended to be a complete command-line parser library.
 Instead this can be used as an alternative quick-and-dirty approach that can
@@ -26,7 +26,8 @@ We *do not* provide:
 * Parsing into [OsString]s. The default parser will panic in case not valid
   unicode is passed into it in accordance with [std::env::args].
 
-For how to use, see the documentation of [argwerk::parse!].
+For how to use, see the documentation of [argwerk::define] and
+[argwerk::parse].
 
 ## Examples
 
@@ -83,7 +84,8 @@ if args.help {
 dbg!(args);
 ```
 
-[argwerk::parse!]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
+[argwerk::define]: https://docs.rs/argwerk/0/argwerk/macro.define.html
+[argwerk::parse]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
 [clap]: https://docs.rs/clap
 [ok_or_else]: https://doc.rust-lang.org/std/option/enum.Option.html#method.ok_or_else
 [OsString]: https://doc.rust-lang.org/std/ffi/struct.OsString.html

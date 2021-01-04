@@ -75,10 +75,10 @@ impl Help {
     /// # Examples
     ///
     /// ```rust
-    /// # fn main() -> Result<(), argwerk::Error> {
-    /// let args = argwerk::parse! {
+    /// argwerk::define! {
     ///     /// A simple test command.
-    ///     "command [-h]" {
+    ///     #[usage = "command [-h]"]
+    ///     struct Args {
     ///         help: bool,
     ///     }
     ///     /// Prints the help.
@@ -90,9 +90,11 @@ impl Help {
     ///     ["-h" | "--help"] => {
     ///         help = true;
     ///     }
-    /// }?;
+    /// }
     ///
-    /// let formatted = format!("{}", args.help().format().width(120));
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let formatted = format!("{}", Args::help().format().width(120));
+    ///
     /// assert!(formatted.split('\n').any(|line| line.len() > 80));
     /// assert!(formatted.split('\n').all(|line| line.len() < 120));
     /// # Ok(()) }
@@ -141,11 +143,7 @@ impl<'a> fmt::Display for HelpFormat<'a> {
         writeln!(f, "Usage: {name}", name = self.help.usage)?;
 
         if !self.help.docs.is_empty() {
-            writeln!(
-                f,
-                "{}",
-                TextWrap::new("", &self.help.docs, self.width, self.padding)
-            )?;
+            writeln!(f, "{}", TextWrap::new("", &self.help.docs, self.width, 0))?;
         }
 
         writeln!(f)?;
@@ -320,7 +318,7 @@ where
                 0
             };
 
-            fill_spaces(f, fill.saturating_sub(1).saturating_sub(init_len))?;
+            fill_spaces(f, fill.saturating_sub(init_len))?;
 
             if let Some((start, end)) = space_span {
                 writeln!(f, "{}", &line[..start])?;
@@ -353,7 +351,7 @@ where
     fn skip_chars(s: &str, count: usize) -> &str {
         let e = s
             .char_indices()
-            .take(count)
+            .skip(count)
             .map(|(i, _)| i)
             .next()
             .unwrap_or(s.len());

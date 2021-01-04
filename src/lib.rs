@@ -2,7 +2,7 @@
 //! [![Crates](https://img.shields.io/crates/v/argwerk.svg)](https://crates.io/crates/argwerk)
 //! [![Actions Status](https://github.com/udoprog/argwerk/workflows/Rust/badge.svg)](https://github.com/udoprog/argwerk/actions)
 //!
-//! Simple command-line parser through a declarative macro.
+//! Define a simple command-line parser through a declarative macro.
 //!
 //! This is **not** intended to be a complete command-line parser library.
 //! Instead this can be used as an alternative quick-and-dirty approach that can
@@ -24,7 +24,8 @@
 //! * Parsing into [OsString]s. The default parser will panic in case not valid
 //!   unicode is passed into it in accordance with [std::env::args].
 //!
-//! For how to use, see the documentation of [argwerk::parse!].
+//! For how to use, see the documentation of [argwerk::define] and
+//! [argwerk::parse].
 //!
 //! # Examples
 //!
@@ -83,7 +84,8 @@
 //! # Ok(()) }
 //! ```
 //!
-//! [argwerk::parse!]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
+//! [argwerk::define]: https://docs.rs/argwerk/0/argwerk/macro.define.html
+//! [argwerk::parse]: https://docs.rs/argwerk/0/argwerk/macro.parse.html
 //! [clap]: https://docs.rs/clap
 //! [ok_or_else]: https://doc.rust-lang.org/std/option/enum.Option.html#method.ok_or_else
 //! [OsString]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
@@ -163,13 +165,15 @@ pub enum ErrorKind {
     /// # Examples
     ///
     /// ```rust
-    /// # fn main() -> Result<(), argwerk::Error> {
-    /// let error = argwerk::parse! {
-    ///     vec!["bar"] => "command [-h]" { }
+    /// argwerk::define! {
+    ///     struct Args { }
     ///     // This errors because `bar` is not a supported switch, nor do we
     ///     // match any positional arguments.
     ///     ["--file", arg] => {}
-    /// }.unwrap_err();
+    /// }
+    ///
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = Args::parse(vec!["bar"]).unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedArgument { .. }));
     /// # Ok(()) }
@@ -186,13 +190,16 @@ pub enum ErrorKind {
     /// # Examples
     ///
     /// ```rust
-    /// # fn main() -> Result<(), argwerk::Error> {
-    /// let error = argwerk::parse! {
-    ///     vec!["--path"] => "command [-h]" { }
+    /// argwerk::define! {
+    ///     #[usage = "command [-h]"]
+    ///     struct Args { }
     ///     // This errors because `--path` is not a supported switch. But
     ///     // `"--file"` is.
     ///     ["--file", arg] => {}
-    /// }.unwrap_err();
+    /// }
+    ///
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = Args::parse(vec!["--path"]).unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::UnsupportedSwitch { .. }));
     /// # Ok(()) }
@@ -206,13 +213,15 @@ pub enum ErrorKind {
     /// # Examples
     ///
     /// ```rust
-    /// # fn main() -> Result<(), argwerk::Error> {
-    /// let error = argwerk::parse! {
-    ///     vec!["--file"] => "command [-h]" { }
+    /// argwerk::define! {
+    ///     struct Args { }
     ///     // This errors because `--file` requires an argument `path`, but
     ///     // that is not provided.
     ///     ["--file", path] => {}
-    /// }.unwrap_err();
+    /// }
+    ///
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = Args::parse(vec!["--file"]).unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingSwitchArgument { .. }));
     /// # Ok(()) }
@@ -229,13 +238,15 @@ pub enum ErrorKind {
     /// # Examples
     ///
     /// ```rust
-    /// # fn main() -> Result<(), argwerk::Error> {
-    /// let error = argwerk::parse! {
-    ///     vec!["foo"] => "command [-h]" { }
+    /// argwerk::define! {
+    ///     struct Args { }
     ///     // This errors because `b` is a required argument, but we only have
     ///     // one which matches `a`.
     ///     [a, b] => {}
-    /// }.unwrap_err();
+    /// }
+    ///
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = Args::parse(vec!["foo"]).unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::MissingPositional { .. }));
     /// # Ok(()) }
@@ -250,14 +261,17 @@ pub enum ErrorKind {
     /// # Examples
     ///
     /// ```rust
-    /// # fn main() -> Result<(), argwerk::Error> {
-    /// let error = argwerk::parse! {
-    ///     vec!["foo"] => "command [-h]" { }
+    /// argwerk::define! {
+    ///     #[usage = "command [-h]"]
+    ///     struct Args { }
     ///     // This errors because we raise an error in the branch body.
     ///     ["foo"] => {
     ///         Err("something went wrong")
     ///     }
-    /// }.unwrap_err();
+    /// }
+    ///
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let error = Args::parse(vec!["foo"]).unwrap_err();
     ///
     /// assert!(matches!(error.kind(), argwerk::ErrorKind::Error { .. }));
     /// # Ok(()) }
@@ -285,10 +299,10 @@ pub enum ErrorKind {
 /// Using `std::env::args()` to get arguments from the environment:
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
+/// argwerk::define! {
 ///     /// A simple test command.
-///     "command [-h]" {
+///     #[usage = "command [-h]"]
+///     struct Args {
 ///         help: bool,
 ///         limit: usize = 10,
 ///     }
@@ -296,10 +310,13 @@ pub enum ErrorKind {
 ///     ["-h" | "--help"] => {
 ///         help = true;
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::args()?;
 ///
 /// if args.help {
-///     println!("{}", args.help());
+///     println!("{}", Args::help());
 /// }
 /// # Ok(()) }
 /// ```
@@ -309,20 +326,22 @@ pub enum ErrorKind {
 /// [IntoIterator] where its items implements [AsRef\<str\>][AsRef].
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     vec!["foo", "bar", "baz"] =>
+/// argwerk::define! {
 ///     /// A simple test command.
-///     "command [-h]" {
+///     #[usage = "command [-h]"]
+///     struct Args {
 ///         help: bool,
-///         positional: Option<(&'static str, &'static str, &'static str)>,
+///         positional: Option<(String, String, String)>,
 ///     }
 ///     [a, b, c] => {
 ///         positional = Some((a, b, c));
 ///     }
-/// }?;
+/// }
 ///
-/// assert_eq!(args.positional, Some(("foo", "bar", "baz")));
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(vec!["foo", "bar", "baz"])?;
+///
+/// assert_eq!(args.positional, Some((String::from("foo"), String::from("bar"), String::from("baz"))));
 /// # Ok(()) }
 /// ```
 ///
@@ -339,11 +358,10 @@ pub enum ErrorKind {
 /// populated during argument parsing.
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     ["--limit", "20"].iter().copied() =>
+/// argwerk::define! {
 ///     /// A simple test command.
-///     "command [-h]" {
+///     #[usage = "command [-h]"]
+///     struct Args {
 ///         help: bool,
 ///         limit: usize = 10,
 ///     }
@@ -355,10 +373,13 @@ pub enum ErrorKind {
 ///     ["--limit", n] => {
 ///         limit = str::parse(&n)?;
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(["--limit", "20"].iter().copied())?;
 ///
 /// if args.help {
-///     println!("{}", args.help());
+///     println!("{}", Args::help());
 /// }
 ///
 /// assert_eq!(args.help, false);
@@ -377,17 +398,21 @@ pub enum ErrorKind {
 /// > for convenience.
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     vec!["-h"] =>
-///     "command [-h]" { help: bool }
+/// argwerk::define! {
+///     #[usage = "command [-h]"]
+///     struct Args {
+///         help: bool
+///     }
 ///     ["-h" | "--help"] => {
 ///         help = true;
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(vec!["-h"])?;
 ///
 /// if args.help {
-///     println!("{}", args.help());
+///     println!("{}", Args::help());
 /// }
 ///
 /// assert_eq!(args.help, true);
@@ -403,14 +428,18 @@ pub enum ErrorKind {
 /// branch matches.
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     ["a", "b"].iter().copied().map(String::from) =>
-///     "command [-h]" { positional: Option<(String, String)>, }
+/// argwerk::define! {
+///     #[usage = "command [-h]"]
+///     struct Args {
+///         positional: Option<(String, String)>,
+///     }
 ///     [foo, bar] if positional.is_none() => {
 ///         positional = Some((foo, bar));
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(["a", "b"].iter().copied())?;
 ///
 /// assert_eq!(args.positional, Some((String::from("a"), String::from("b"))));
 /// # Ok(()) }
@@ -426,10 +455,10 @@ pub enum ErrorKind {
 /// [Help::format].
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
+/// argwerk::define! {
 ///     /// A simple test command.
-///     "command [-h]" {
+///     #[usage = "command [-h]"]
+///     struct Args {
 ///         help: bool,
 ///     }
 ///     /// Prints the help.
@@ -441,10 +470,13 @@ pub enum ErrorKind {
 ///     ["-h" | "--help"] => {
 ///         help = true;
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::args()?;
 ///
 /// if args.help {
-///     println!("{}", args.help().format().width(120));
+///     println!("{}", Args::help().format().width(120));
 /// }
 /// # Ok(()) }
 /// ```
@@ -485,17 +517,19 @@ pub enum ErrorKind {
 /// The following showcases capturing using a positional argument:
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     vec!["foo", "bar", "baz"].into_iter().map(String::from) =>
+/// argwerk::define! {
 ///     /// A simple test command.
-///     "command [-h]" {
+///     #[usage = "command [-h]"]
+///     struct Args {
 ///         rest: Vec<String>,
 ///     }
 ///     [#[rest] args] => {
 ///         rest = args;
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(["foo", "bar", "baz"].iter().copied())?;
 ///
 /// assert_eq!(args.rest, &["foo", "bar", "baz"]);
 /// # Ok(()) }
@@ -504,14 +538,18 @@ pub enum ErrorKind {
 /// And the following through a switch:
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = argwerk::parse! {
-///     vec!["--test", "foo", "bar", "baz"].into_iter().map(String::from) =>
-///     "command [-h]" { rest: Vec<String>, }
+/// argwerk::define! {
+///     #[usage = "command [-h]"]
+///     struct Args {
+///         rest: Vec<String>,
+///     }
 ///     ["--test", #[rest] args] => {
 ///         rest = args;
 ///     }
-/// }?;
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(["--test", "foo", "bar", "baz"].iter().copied())?;
 ///
 /// assert_eq!(args.rest, &["foo", "bar", "baz"]);
 /// # Ok(()) }
@@ -528,11 +566,10 @@ pub enum ErrorKind {
 /// * The argument is a switch (starts with `-`).
 ///
 /// ```rust
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let parser = |iter: &[&str]| argwerk::parse! {
-///     iter.iter().copied().map(String::from) =>
+/// argwerk::define! {
 ///     /// A simple test command.
-///     "command [-h]" {
+///     #[usage = "command [-h]"]
+///     struct Args {
 ///         foo: Option<String>,
 ///         bar: bool,
 ///     }
@@ -543,95 +580,169 @@ pub enum ErrorKind {
 ///     ["--bar"] => {
 ///         bar = true;
 ///     }
-/// };
+/// }
 ///
+/// # fn main() -> Result<(), argwerk::Error> {
 /// // Argument exists, but looks like a switch.
-/// let args = parser(&["--foo", "--bar"])?;
+/// let args = Args::parse(["--foo", "--bar"].iter().copied())?;
 /// assert_eq!(args.foo.as_deref(), None);
 /// assert!(args.bar);
 ///
 /// // Argument does not exist.
-/// let args = parser(&["--foo"])?;
+/// let args = Args::parse(["--foo"].iter().copied())?;
 /// assert_eq!(args.foo.as_deref(), None);
 /// assert!(!args.bar);
 ///
-/// let args = parser(&["--foo", "bar"])?;
+/// let args = Args::parse(["--foo", "bar"].iter().copied())?;
 /// assert_eq!(args.foo.as_deref(), Some("bar"));
 /// assert!(!args.bar);
 /// # Ok(()) }
 /// ```
 #[macro_export]
-macro_rules! parse {
-    // Parse from a custom iterator.
+macro_rules! define {
     (
-        $it:expr => $($config:tt)*
-    ) => {{
-        let mut __argwerk_it = ::std::iter::IntoIterator::into_iter($it);
-        $crate::__internal!(__argwerk_it, $($config)*)
-    }};
+        $(#[doc = $doc:literal])*
+        $(#[usage = $usage:literal])*
+        $vis:vis struct $name:ident { $($body:tt)* }
+        $($config:tt)*
+    ) => {
+        $crate::__impl! {
+            $(#[usage = $usage])*
+            $vis struct $name { $($body)* }
+            $($config)*
+        }
 
-    // Parse from `std::env::args()`.
+        impl $name {
+            /// Return a formatter that formats to the help string at 80
+            /// characters witdth of this argument structure.
+            $vis fn help() -> &'static $crate::Help {
+                &$crate::Help {
+                    usage: $crate::__impl!(@usage $name, $($usage)*),
+                    docs: &[$($doc,)*],
+                    switches: $crate::__impl!(@switches $($config)*)
+                }
+            }
+        }
+    };
+}
+
+/// Works the same as [define], but immediately parses arguments from
+/// [std::env::args] in place.
+///
+/// # Examples
+///
+/// ```rust
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = argwerk::parse! {
+///     /// A simple test command.
+///     "command [-h]" {
+///         help: bool,
+///         limit: usize = 10,
+///     }
+///     /// Print this help.
+///     ["-h" | "--help"] => {
+///         help = true;
+///     }
+/// }?;
+///
+/// if args.help {
+///     println!("{}", args.help());
+/// }
+/// # Ok(()) }
+/// ```
+#[macro_export]
+macro_rules! parse {
     (
+        $(#[doc = $doc:literal])*
+        $usage:literal { $($body:tt)* }
         $($config:tt)*
     ) => {{
-        let mut __argwerk_it = ::std::env::args();
-        __argwerk_it.next();
-        $crate::__internal!(__argwerk_it, $($config)*)
+        $crate::__impl! {
+            #[usage = $usage]
+            struct Args { $($body)* }
+            $($config)*
+        };
+
+        impl Args {
+            /// Return a formatter that formats to the help string at 80
+            /// characters witdth of this argument structure.
+            fn help(&self) -> &'static $crate::Help {
+                &$crate::Help {
+                    usage: $usage,
+                    docs: &[$($doc,)*],
+                    switches: $crate::__impl!(@switches $($config)*)
+                }
+            }
+        }
+
+        Args::args()
     }};
 }
 
 /// Internal implementation details of the [parse] macro.
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __internal {
+macro_rules! __impl {
     // The guts of the parser.
     (
-        $it:ident,
-        $(#[doc = $doc:literal])*
-        $usage:literal {
-            $($field:ident : $ty:ty $(= $expr:expr)?),* $(,)?
+        $(#[usage = $usage:literal])*
+        $vis:vis struct $name:ident {
+            $($field:ident: $ty:ty $(= $expr:expr)?),* $(,)?
         }
         $($config:tt)*
-    ) => {{
-        let mut $it = $it.peekable();
+    ) => {
+        #[derive(Debug)]
+        $vis struct $name { $($field: $ty,)* }
 
-        let mut parser = || {
-            $($crate::__internal!(@field $field, $ty $(= $expr)*);)*
-
-            while let Some(__argwerk_arg) = $it.next() {
-                $crate::__internal!(@branches __argwerk_arg, $it, $($config)*);
-
-                if $crate::__internal!(@is-switch &__argwerk_arg) {
-                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
-                        switch: __argwerk_arg.into()
-                    }));
-                } else {
-                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
-                        argument: __argwerk_arg.into()
-                    }));
-                }
+        impl $name {
+            /// Parse [std::env::args].
+            $vis fn args() -> Result<Self, $crate::Error> {
+                let mut it = std::env::args();
+                it.next();
+                Self::parse(it)
             }
 
-            #[derive(Debug)]
-            struct Args { $($field: $ty,)* }
+            /// Parse a custom iterator.
+            $vis fn parse<I>(it: I) -> Result<Self, $crate::Error>
+            where
+                I: IntoIterator,
+                I::Item: AsRef<str>,
+                String: From<I::Item>,
+                Box<str>: From<I::Item>,
+            {
+                let mut it = it.into_iter().peekable();
 
-            impl Args {
-                /// Return a formatter that formats to the help string at 80
-                /// characters witdth of this argument structure.
-                pub fn help(&self) -> &'static $crate::Help {
-                    &$crate::Help {
-                        usage: $usage,
-                        docs: &[$($doc,)*],
-                        switches: $crate::__internal!(@switches $($config)*)
+                $($crate::__impl!(@field $field, $ty $(= $expr)*);)*
+
+                while let Some(__argwerk_arg) = it.next() {
+                    $crate::__impl!(@branches __argwerk_arg, it, $($config)*);
+
+                    if $crate::__impl!(@is-switch &__argwerk_arg) {
+                        return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
+                            switch: __argwerk_arg.into()
+                        }));
+                    } else {
+                        return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
+                            argument: __argwerk_arg.into()
+                        }));
                     }
                 }
+
+                Ok(Self { $($field,)* })
             }
+        }
+    };
 
-            Ok(Args { $($field,)* })
-        };
+    // Default usage.
+    (@usage $name:ident,) => {
+        stringify!($name)
+    };
 
-        parser()
-    }};
+    // Specified usage.
+    (@usage $name:ident, $usage:literal) => {
+        $usage
+    };
 
     // Parse the rest of the available arguments.
     (@doc #[rest] $argument:ident) => {
@@ -656,8 +767,8 @@ macro_rules! __internal {
     // Parse an optional argument.
     (@positional #[option] $it:ident, $arg:ident) => {
         match $it.peek() {
-            Some(n) => if !$crate::__internal!(@is-switch n) {
-                $it.next()
+            Some(n) => if !$crate::__impl!(@is-switch n) {
+                $it.next().map(String::from)
             } else {
                 None
             }
@@ -668,7 +779,7 @@ macro_rules! __internal {
     // Parse the rest of the arguments.
     (@positional $it:ident, $arg:ident) => {
         match $it.next() {
-            Some($arg) => $arg,
+            Some($arg) => String::from($arg),
             None => return Err(
                 ::argwerk::Error::new(
                     ::argwerk::ErrorKind::MissingPositional {
@@ -680,33 +791,28 @@ macro_rules! __internal {
     };
 
     // Parse the rest of the available arguments.
-    (@first-positional #[rest] $argument:ident, $it:ident) => {
-        Some($argument).into_iter().chain(&mut $it).collect::<Vec<_>>();
+    (@first #[rest] $argument:ident, $it:ident) => {
+        Some($argument).into_iter().chain(&mut $it).map(String::from).collect::<Vec<_>>();
     };
 
     // Parse an optional argument.
-    (@first-positional #[option] $argument:ident, $it:ident) => {
-        Some($argument)
+    (@first #[option] $argument:ident, $it:ident) => {
+        Some(String::from($argument))
     };
 
     // Parse as its argument.
-    (@first-positional $argument:ident, $it:ident) => {
-        $argument
-    };
-
-    // Test if `$n` is switch or not.
-    (@is-switch $n:expr) => {
-        std::convert::AsRef::<str>::as_ref($n).starts_with('-')
+    (@first $argument:ident, $it:ident) => {
+        String::from($argument)
     };
 
     // Try to parse an argument to a parameter.
     (@switch-argument $switch:ident, $it:ident, $argument:ident) => {
         match $it.next() {
-            Some($argument) => $argument,
+            Some($argument) => String::from($argument),
             None => return Err(
                 ::argwerk::Error::new(
                     ::argwerk::ErrorKind::MissingSwitchArgument {
-                        switch: std::convert::AsRef::<str>::as_ref(&$switch).into(),
+                        switch: $crate::__impl!(@to-str &$switch).into(),
                         argument: stringify!($argument),
                     }
                 )
@@ -722,8 +828,8 @@ macro_rules! __internal {
     // Parse an optional argument.
     (@switch-argument #[option] $switch:ident, $it:ident, $arg:ident) => {
         match $it.peek() {
-            Some(n) => if !$crate::__internal!(@is-switch n) {
-                $it.next()
+            Some(n) => if !$crate::__impl!(@is-switch n) {
+                $it.next().map(String::from)
             } else {
                 None
             }
@@ -746,8 +852,8 @@ macro_rules! __internal {
     ) => {
         $crate::Switch {
             usage: concat!(
-                $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
-                $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
+                $crate::__impl!(@doc $(#[$($first_meta)*])* $first),
+                $(" ", $crate::__impl!(@doc $(#[$($rest_meta)*])* $rest),)*
             ),
             docs: &[$($doc,)*]
         }
@@ -761,7 +867,7 @@ macro_rules! __internal {
         $crate::Switch {
             usage: concat!(
                 $first, $(", ", $rest,)*
-                $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
+                $(" ", $crate::__impl!(@doc $(#[$($arg_meta)*])* $arg),)*
             ),
             docs: &[$($doc,)*]
         }
@@ -769,7 +875,7 @@ macro_rules! __internal {
 
     // Generate switch help.
     (@switches $( $(#[doc = $doc:literal])* [$($branch:tt)*] $(if $cond:expr)? => $block:block)*) => {
-        &[$($crate::__internal!(@switch-help $($doc)* [$($branch)*])),*]
+        &[$($crate::__impl!(@switch-help $($doc)* [$($branch)*])),*]
     };
 
     // The empty condition.
@@ -786,7 +892,7 @@ macro_rules! __internal {
             $(if $cond:expr)? => $block:block
         )*
     ) => {{
-        $($crate::__internal!(@branch $switch, $it, [ $($config)* ] $(if $cond)* => $block);)*
+        $($crate::__impl!(@branch $switch, $it, [ $($config)* ] $(if $cond)* => $block);)*
     }};
 
     // Match positional arguments.
@@ -795,11 +901,11 @@ macro_rules! __internal {
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
         $(if $cond:expr)? => $block:block
     ) => {
-        if $crate::__internal!(@cond $($cond)*) {
-            let __argwerk_name = std::convert::AsRef::<str>::as_ref(&$switch).into();
+        if $crate::__impl!(@cond $($cond)*) {
+            let __argwerk_name = $crate::__impl!(@to-str &$switch).into();
 
-            let $first = $crate::__internal!(@first-positional $(#[$($first_meta)*])* $switch, $it);
-            $(let $rest = $crate::__internal!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
+            let $first = $crate::__impl!(@first $(#[$($first_meta)*])* $switch, $it);
+            $(let $rest = $crate::__impl!(@positional $(#[$($rest_meta)*])* $it, $rest);)*
 
             let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                 $crate::helpers::into_result($block)
@@ -821,9 +927,9 @@ macro_rules! __internal {
         $switch:ident, $it:ident,
         [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*] $(if $cond:expr)? => $block:block
     ) => {
-        match std::convert::AsRef::<str>::as_ref(&$switch) {
+        match $crate::__impl!(@to-str &$switch) {
             $first $( | $rest)* $(if $cond)* => {
-                $(let $arg = $crate::__internal!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
+                $(let $arg = $crate::__impl!(@switch-argument $(#[$($arg_meta)*])* $switch, $it, $arg);)*
 
                 let mut __argwerk_handle = || -> Result<(), Box<dyn ::std::error::Error + Send + Sync + 'static>> {
                     $crate::helpers::into_result($block)
@@ -831,7 +937,7 @@ macro_rules! __internal {
 
                 if let Err(error) = __argwerk_handle() {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                        name: std::convert::AsRef::<str>::as_ref(&$switch).into(),
+                        name: $crate::__impl!(@to-str &$switch).into(),
                         error
                     }));
                 }
@@ -840,5 +946,15 @@ macro_rules! __internal {
             }
             _ => (),
         }
+    };
+
+    // Get argument as a `&str` through `AsRef<str>`.
+    (@to-str $n:expr) => {
+        std::convert::AsRef::<str>::as_ref($n)
+    };
+
+    // Test if `$n` is switch or not.
+    (@is-switch $n:expr) => {
+        $crate::__impl!(@to-str $n).starts_with('-')
     };
 }
