@@ -27,7 +27,47 @@
 //!
 //! # Examples
 //!
-//! > This is available as a runnable example:
+//! Initially when you're adding arguments to your program you can use
+//! [argwerk::args]. This allows for easily parsing out a handful of optional
+//! parameters.
+//!
+//! > This example is available as `simple`:
+//! > ```sh
+//! > cargo run --example simple -- --limit 20
+//! > ```
+//!
+//! ```rust
+//! # fn main() -> Result<(), argwerk::Error> {
+//! let args = argwerk::args! {
+//!     /// A simple tool.
+//!     "tool [-h]" {
+//!         help: bool,
+//!         limit: usize = 10,
+//!     }
+//!     /// The limit of the operation. (default: 10).
+//!     ["-l" | "--limit", int] => {
+//!         limit = str::parse(&int)?;
+//!     }
+//!     /// Print this help.
+//!     ["-h" | "--help"] => {
+//!         println!("{}", HELP);
+//!         help = true;
+//!     }
+//! }?;
+//!
+//! if args.help {
+//!     return Ok(());
+//! }
+//!
+//! dbg!(args);
+//! # Ok(()) }
+//! ```
+//!
+//! After a while you might want to graduate to defining a *named* struct
+//! containing the arguments. This can be useful if you want to pass the
+//! arguments around.
+//!
+//! > This example is available as `tour`:
 //! > ```sh
 //! > cargo run --example tour -- --help
 //! > ```
@@ -77,7 +117,10 @@
 //! }
 //!
 //! # fn main() -> anyhow::Result<()> {
+//! // Note: we're using `parse` here instead of `args` since it works better
+//! // with the example.
 //! let args = Args::parse(vec!["--file", "foo.txt", "--input", "-"])?;
+//!
 //! dbg!(args);
 //! # Ok(()) }
 //! ```

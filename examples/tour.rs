@@ -43,6 +43,7 @@ argwerk::define! {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::args()?;
+
     dbg!(args);
     Ok(())
 }
