@@ -622,7 +622,7 @@ macro_rules! __internal {
                     &$crate::Help {
                         usage: $usage,
                         docs: &[$($doc,)*],
-                        switches: $crate::__internal!(@switch-help $($config)*)
+                        switches: $crate::__internal!(@switches $($config)*)
                     }
                 }
             }
@@ -739,7 +739,7 @@ macro_rules! __internal {
         let mut $field: $ty = $expr;
     };
 
-    // Generate help for positional parameters.
+    // Generate help for positional branches.
     (@switch-help
         $($doc:literal)*
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
@@ -753,7 +753,7 @@ macro_rules! __internal {
         }
     };
 
-    // A branch in a help generator.
+    // Generate help for matching branches.
     (@switch-help
         $($doc:literal)*
         [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*]
@@ -767,8 +767,8 @@ macro_rules! __internal {
         }
     };
 
-    // A branch in a help generator.
-    (@switch-help $( $(#[doc = $doc:literal])* [$($branch:tt)*] $(if $cond:expr)? => $block:block)*) => {
+    // Generate switch help.
+    (@switches $( $(#[doc = $doc:literal])* [$($branch:tt)*] $(if $cond:expr)? => $block:block)*) => {
         &[$($crate::__internal!(@switch-help $($doc)* [$($branch)*])),*]
     };
 

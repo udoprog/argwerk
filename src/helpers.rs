@@ -19,6 +19,7 @@ type BoxError = Box<dyn error::Error + Send + Sync + 'static>;
 ///
 /// This is used to convert the value of a branch into a result.
 #[doc(hidden)]
+#[inline]
 pub fn into_result<T>(value: T) -> Result<(), BoxError>
 where
     T: IntoResult,
@@ -32,6 +33,7 @@ pub trait IntoResult {
 }
 
 impl IntoResult for () {
+    #[inline]
     fn into_result(self) -> Result<(), BoxError> {
         Ok(())
     }
@@ -41,6 +43,7 @@ impl<E> IntoResult for Result<(), E>
 where
     BoxError: From<E>,
 {
+    #[inline]
     fn into_result(self) -> Result<(), BoxError> {
         Ok(self?)
     }
