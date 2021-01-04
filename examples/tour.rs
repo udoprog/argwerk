@@ -5,7 +5,7 @@ fn main() -> Result<(), argwerk::Error> {
             help: bool,
             file: Option<String>,
             input: Option<String>,
-            limit: usize = 42,
+            limit: usize = 10,
             positional: Option<(String, Option<String>)>,
             rest: Vec<String>,
         }
@@ -19,7 +19,7 @@ fn main() -> Result<(), argwerk::Error> {
             help = true;
             Ok(())
         }
-        /// Limit the number of things by <n>.
+        /// Limit the number of things by <n> (default: 10).
         ["--limit" | "-l", n] => {
             limit = str::parse(&n)?;
             Ok(())
