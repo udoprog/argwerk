@@ -20,8 +20,6 @@ We provide:
 We *do not* provide:
 * As-close-to correct line wrapping with wide unicode characters as possible
   (see [textwrap]).
-* Required switches and arguments. If your switch is required, you'll have
-  to [ok_or_else] it yourself from an `Option<T>`.
 * Complex command structures like subcommands.
 * Parsing into [OsString]s. The default parser will panic in case not valid
   unicode is passed into it in accordance with [std::env::args].
@@ -41,7 +39,8 @@ let args = argwerk::parse! {
     /// A command touring the capabilities of argwerk.
     "tour [-h]" {
         help: bool,
-        file: Option<String>,
+        #[required = "--file must be specified"]
+        file: String,
         input: Option<String>,
         limit: usize = 10,
         positional: Option<(String, Option<String>)>,
@@ -52,8 +51,9 @@ let args = argwerk::parse! {
     /// This includes:
     ///    * All the available switches.
     ///    * All the available positional arguments.
-    ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
+    ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly //!long.
     ["-h" | "--help"] => {
+        println!("{}", HELP);
         help = true;
     }
     /// Limit the number of things by <n> (default: 10).
@@ -76,10 +76,6 @@ let args = argwerk::parse! {
         rest = args;
     }
 }?;
-
-if args.help {
-    println!("{}", args.help());
-}
 
 dbg!(args);
 ```

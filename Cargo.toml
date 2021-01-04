@@ -13,3 +13,6 @@ documentation = "https://docs.rs/argwerk"
 description = """
 Simple command-line parser through a declarative macro.
 """
+
+[dev-dependencies]
+anyhow = "1"

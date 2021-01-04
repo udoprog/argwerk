@@ -32,13 +32,14 @@
 //! > cargo run --example tour
 //! > ```
 //!
-//! ```rust
-//! # fn main() -> Result<(), argwerk::Error> {
+//! ```rust,should_panic
+//! # fn main() -> anyhow::Result<()> {
 //! let args = argwerk::parse! {
 //!     /// A command touring the capabilities of argwerk.
 //!     "tour [-h]" {
 //!         help: bool,
-//!         file: Option<String>,
+//!         #[required = "--file must be specified"]
+//!         file: String,
 //!         input: Option<String>,
 //!         limit: usize = 10,
 //!         positional: Option<(String, Option<String>)>,
@@ -49,8 +50,9 @@
 //!     /// This includes:
 //!     ///    * All the available switches.
 //!     ///    * All the available positional arguments.
-//!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
+//!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly //!long.
 //!     ["-h" | "--help"] => {
+//!         println!("{}", HELP);
 //!         help = true;
 //!     }
 //!     /// Limit the number of things by <n> (default: 10).
@@ -73,10 +75,6 @@
 //!         rest = args;
 //!     }
 //! }?;
-//!
-//! if args.help {
-//!     println!("{}", args.help());
-//! }
 //!
 //! dbg!(args);
 //! # Ok(()) }
@@ -481,15 +479,16 @@ pub enum ErrorKind {
 /// (e.g. `/// Hello World`). These are automatically wrapped to 80 characters.
 ///
 /// Documentation can be formatted with the `help` associated function, which
-/// returns a static instance of [Help]. This can be further customized using
-/// [Help::format].
+/// returns a static instance of [Help]. This is also available as the `HELP`
+/// static variable inside of match branches. Help formatting can be further
+/// customized using [Help::format].
 ///
 /// ```rust
 /// argwerk::define! {
 ///     /// A simple test command.
 ///     #[usage = "command [-h]"]
 ///     struct Args {
-///         help: bool,
+///         help2: bool,
 ///     }
 ///     /// Prints the help.
 ///     ///
@@ -498,16 +497,21 @@ pub enum ErrorKind {
 ///     ///    * All the available positional arguments.
 ///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 ///     ["-h" | "--help"] => {
-///         help = true;
+///         println!("{}", HELP.format().width(120));
+///     }
+///     ["--help2"] => {
+///         help2 = true;
 ///     }
 /// }
 ///
 /// # fn main() -> Result<(), argwerk::Error> {
 /// let args = Args::args()?;
 ///
-/// if args.help {
+/// // Another way to access and format help documentation.
+/// if args.help2 {
 ///     println!("{}", Args::help().format().width(120));
 /// }
+///
 /// # Ok(()) }
 /// ```
 ///
@@ -667,6 +671,7 @@ macro_rules! define {
         $($config:tt)*
     ) => {
         $crate::__impl! {
+            $(#[doc = $doc])*
             $(#[usage = $usage])*
             $vis struct $name { $($body)* }
             $($config)*
@@ -676,11 +681,7 @@ macro_rules! define {
             /// Return a formatter that formats to the help string at 80
             /// characters witdth of this argument structure.
             $vis fn help() -> &'static $crate::Help {
-                &$crate::Help {
-                    usage: $crate::__impl!(@usage $name, $($usage)*),
-                    docs: &[$($doc,)*],
-                    switches: $crate::__impl!(@switches $($config)*)
-                }
+                &Self::HELP
             }
         }
     };
@@ -719,6 +720,7 @@ macro_rules! parse {
         $($config:tt)*
     ) => {{
         $crate::__impl! {
+            $(#[doc = $doc])*
             #[usage = $usage]
             struct Args { $($body)* }
             $($config)*
@@ -728,11 +730,7 @@ macro_rules! parse {
             /// Return a formatter that formats to the help string at 80
             /// characters witdth of this argument structure.
             fn help(&self) -> &'static $crate::Help {
-                &$crate::Help {
-                    usage: $usage,
-                    docs: &[$($doc,)*],
-                    switches: $crate::__impl!(@switches $($config)*)
-                }
+                &Self::HELP
             }
         }
 
@@ -746,6 +744,7 @@ macro_rules! parse {
 macro_rules! __impl {
     // The guts of the parser.
     (
+        $(#[doc = $doc:literal])*
         $(#[usage = $usage:literal])*
         $vis:vis struct $name:ident {
             $( $(#[$($field_m:tt)*])* $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
@@ -756,6 +755,12 @@ macro_rules! __impl {
         $vis struct $name { $($field: $ty,)* }
 
         impl $name {
+            pub const HELP: $crate::Help = $crate::Help {
+                usage: $crate::__impl!(@usage $name, $($usage)*),
+                docs: &[$($doc,)*],
+                switches: $crate::__impl!(@switches $($config)*)
+            };
+
             /// Parse [std::env::args].
             $vis fn args() -> Result<Self, $crate::Error> {
                 let mut it = std::env::args();
@@ -771,6 +776,8 @@ macro_rules! __impl {
                 Box<str>: From<I::Item>,
                 String: From<I::Item>,
             {
+                static HELP: &$crate::Help = &$name::HELP;
+
                 let mut it = it.into_iter().peekable();
                 $($crate::__impl!(@init $(#[$($field_m)*])* $field, $ty $(, $expr)*);)*
 

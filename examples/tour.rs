@@ -1,9 +1,10 @@
-fn main() -> Result<(), argwerk::Error> {
+fn main() -> anyhow::Result<()> {
     let args = argwerk::parse! {
         /// A command touring the capabilities of argwerk.
         "tour [-h]" {
             help: bool,
-            file: Option<String>,
+            #[required = "--file must be specified"]
+            file: String,
             input: Option<String>,
             limit: usize = 10,
             positional: Option<(String, Option<String>)>,
@@ -16,6 +17,7 @@ fn main() -> Result<(), argwerk::Error> {
         ///    * All the available positional arguments.
         ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
         ["-h" | "--help"] => {
+            println!("{}", HELP);
             help = true;
         }
         /// Limit the number of things by <n> (default: 10).
@@ -38,10 +40,6 @@ fn main() -> Result<(), argwerk::Error> {
             rest = args;
         }
     }?;
-
-    if args.help {
-        println!("{}", args.help().format().width(100));
-    }
 
     dbg!(args);
     Ok(())
