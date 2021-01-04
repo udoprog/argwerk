@@ -52,7 +52,6 @@
 //!     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 //!     "-h" | "--help" => {
 //!         help = true;
-//!         print_help();
 //!         Ok(())
 //!     }
 //!     /// Limit the number of things by <n>.
@@ -80,6 +79,10 @@
 //!     }
 //! }?;
 //!
+//! if args.help {
+//!     println!("{}", args.help());
+//! }
+//!
 //! dbg!(args);
 //! # Ok(()) }
 //! ```
@@ -98,6 +101,8 @@ use std::fmt;
 pub mod helpers;
 
 use std::error;
+
+pub use self::helpers::Help;
 
 /// An error raised by argwerk.
 #[derive(Debug)]
@@ -293,10 +298,13 @@ pub enum ErrorKind {
 ///     /// Print this help.
 ///     "-h" | "--help" => {
 ///         help = true;
-///         print_help();
 ///         Ok(())
 ///     }
 /// }?;
+///
+/// if args.help {
+///     println!("{}", args.help());
+/// }
 /// # Ok(()) }
 /// ```
 ///
@@ -347,7 +355,6 @@ pub enum ErrorKind {
 ///     /// Print this help.
 ///     "-h" | "--help" => {
 ///         help = true;
-///         print_help();
 ///         Ok(())
 ///     }
 ///     /// Specify a limit (default: 10).
@@ -356,6 +363,10 @@ pub enum ErrorKind {
 ///         Ok(())
 ///     }
 /// }?;
+///
+/// if args.help {
+///     println!("{}", args.help());
+/// }
 ///
 /// assert_eq!(args.help, false);
 /// assert_eq!(args.limit, 20);
@@ -379,10 +390,13 @@ pub enum ErrorKind {
 ///     "command [-h]" { help: bool }
 ///     "-h" | "--help" => {
 ///         help = true;
-///         print_help();
 ///         Ok(())
 ///     }
 /// }?;
+///
+/// if args.help {
+///     println!("{}", args.help());
+/// }
 ///
 /// assert_eq!(args.help, true);
 /// # Ok(()) }
@@ -415,13 +429,16 @@ pub enum ErrorKind {
 ///
 /// You specify documentation for switches and arguments using doc comments
 /// (e.g. `/// Hello World`). These are automatically wrapped to 80 characters.
-/// And is made available through a handful of local functions:
 ///
-/// * `write_help` - Which can write the help string to something implementing
-///   [std::io::Write].
-/// * `print_help` - Which will print the help string to [std::io::stdout].
+/// Documentation can be formatted using the following associated functions to
+/// the return value of the macro:
 ///
-/// > The following makes use of the `print_help` generated function.
+/// * `help` - Which returns an implementation of [std::fmt::Display] allowing
+///   it to be formatted at-will.
+/// * `help_with` - Same as `help`, except that it allows for specifying the
+///   character width to format the messages using.
+///
+/// > The following makes use of the `help` generated function.
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -438,11 +455,13 @@ pub enum ErrorKind {
 ///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
 ///     "-h" | "--help" => {
 ///         help = true;
-///         print_help();
 ///         Ok(())
 ///     }
 /// }?;
 ///
+/// if args.help {
+///     println!("{}", args.help());
+/// }
 /// # Ok(()) }
 /// ```
 ///
@@ -595,22 +614,6 @@ macro_rules! __parse_inner {
         $($tt:tt)*
     ) => {{
         let mut parser = || {
-            fn write_help(mut w: impl ::std::io::Write) -> ::std::io::Result<()> {
-                use std::fmt::Write as _;
-
-                let docs = [$($doc,)*];
-                let mut help = ::argwerk::helpers::Help::new($usage, &docs[..]);
-                $crate::__parse_inner!(@help help, $($tt)*);
-                write!(w, "{}", help)?;
-                Ok(())
-            }
-
-            fn print_help() {
-                let out = ::std::io::stdout();
-                let mut out = out.lock();
-                write_help(out).expect("writing to stdout failed");
-            }
-
             $($crate::__parse_inner!(@field $field, $ty $(= $expr)*);)*
 
             while let Some(__argwerk_arg) = $it.next() {
@@ -629,6 +632,22 @@ macro_rules! __parse_inner {
 
             #[derive(Debug)]
             struct Args { $($field: $ty,)* }
+
+            impl Args {
+                /// Return a formatter that formats to the help string at 80
+                /// characters witdth of this argument structure.
+                fn help(&self) -> impl ::std::fmt::Display {
+                    self.help_with(80)
+                }
+
+                /// Return a formatter that formats to the help string with the
+                /// given character width of this argument structure.
+                fn help_with(&self, width: usize) -> impl ::std::fmt::Display {
+                    let mut help = ::argwerk::helpers::Help::new($usage, vec![$($doc,)*].into(), width);
+                    $crate::__parse_inner!(@help help, $($tt)*);
+                    return help;
+                }
+            }
 
             Ok(Args {
                 $($field,)*
@@ -772,9 +791,7 @@ macro_rules! __parse_inner {
             $crate::__parse_inner!(@doc $(#[$($rest_meta)*])* init, $rest);
         )*
 
-        let docs = vec![$($doc,)*];
-        $help.switch(docs);
-
+        $help.switch(vec![$($doc,)*].into());
         $crate::__parse_inner!(@help $help, $($tail)*);
     }};
 
@@ -801,9 +818,7 @@ macro_rules! __parse_inner {
             $crate::__parse_inner!(@doc $(#[$($arg_meta)*])* init, $arg);
         )*
 
-        let docs = vec![$($doc,)*];
-        $help.switch(docs);
-
+        $help.switch(vec![$($doc,)*].into());
         $crate::__parse_inner!(@help $help, $($tail)*);
     }};
 

@@ -2,29 +2,32 @@ use std::fmt;
 
 struct Doc {
     init: Box<str>,
-    docs: Vec<&'static str>,
+    docs: Box<[&'static str]>,
 }
 
 /// Helper to format a documentation snippet.
 struct DocFmt<'a> {
     init: &'a str,
     docs: &'a [&'static str],
+    width: usize,
     init_len: Option<usize>,
 }
 
 impl<'a> DocFmt<'a> {
-    fn new(init: &'a str, docs: &'a [&'static str]) -> Self {
+    fn new(init: &'a str, docs: &'a [&'static str], width: usize) -> Self {
         Self {
             init,
             docs,
+            width,
             init_len: None,
         }
     }
 
-    fn switch(init: &'a str, docs: &'a [&'static str], init_len: usize) -> Self {
+    fn switch(init: &'a str, docs: &'a [&'static str], width: usize, init_len: usize) -> Self {
         DocFmt {
             init,
             docs,
+            width,
             init_len: Some(init_len),
         }
     }
@@ -33,7 +36,7 @@ impl<'a> DocFmt<'a> {
 impl fmt::Display for DocFmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.docs.is_empty() {
-            textwrap(f, self.docs, 80, &self.init, self.init_len)?;
+            textwrap(f, self.docs, self.width, &self.init, self.init_len)?;
         } else {
             write!(f, "{}", self.init)?;
         }
@@ -42,29 +45,31 @@ impl fmt::Display for DocFmt<'_> {
     }
 }
 
-/// Helper for constructing documentation text.
-pub struct Help<'a> {
-    usage: &'a str,
-    docs: &'a [&'static str],
+/// Helper that can be formatted into documentation text.
+pub struct Help {
+    usage: &'static str,
+    docs: Box<[&'static str]>,
     switches: Vec<Doc>,
+    width: usize,
     init: String,
     init_len: usize,
 }
 
-impl<'a> Help<'a> {
+impl Help {
     /// Construct a new help generator.
-    pub fn new(usage: &'a str, docs: &'a [&'static str]) -> Self {
+    pub fn new(usage: &'static str, docs: Box<[&'static str]>, width: usize) -> Self {
         Self {
             usage,
             docs,
             switches: Vec::new(),
+            width,
             init: String::new(),
             init_len: 0,
         }
     }
 
-    /// Add the documentation for a single fields.
-    pub fn switch(&mut self, docs: Vec<&'static str>) {
+    /// Add the documentation for a single switch.
+    pub fn switch(&mut self, docs: Box<[&'static str]>) {
         if !docs.is_empty() {
             self.init.push_str("  ");
         }
@@ -75,18 +80,19 @@ impl<'a> Help<'a> {
     }
 
     /// Get a mutable work buffer for the prefix.
+    #[doc(hidden)]
     pub fn switch_init_mut(&mut self) -> &mut String {
         self.init.clear();
         &mut self.init
     }
 }
 
-impl fmt::Display for Help<'_> {
+impl fmt::Display for Help {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Usage: {name}", name = self.usage)?;
 
         if !self.docs.is_empty() {
-            writeln!(f, "{}", DocFmt::new("", &self.docs))?;
+            writeln!(f, "{}", DocFmt::new("", &self.docs, self.width))?;
         }
 
         writeln!(f)?;
@@ -95,7 +101,11 @@ impl fmt::Display for Help<'_> {
             writeln!(f, "Options:")?;
 
             for d in &self.switches {
-                writeln!(f, "{}", DocFmt::switch(&d.init, &d.docs, self.init_len))?;
+                writeln!(
+                    f,
+                    "{}",
+                    DocFmt::switch(&d.init, &d.docs, self.width, self.init_len)
+                )?;
             }
         }
 

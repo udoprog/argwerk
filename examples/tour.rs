@@ -17,7 +17,6 @@ fn main() -> Result<(), argwerk::Error> {
         ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
         "-h" | "--help" => {
             help = true;
-            print_help();
             Ok(())
         }
         /// Limit the number of things by <n>.
@@ -44,6 +43,10 @@ fn main() -> Result<(), argwerk::Error> {
             Ok(())
         }
     }?;
+
+    if args.help {
+        println!("{}", args.help());
+    }
 
     dbg!(args);
     Ok(())
