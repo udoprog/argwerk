@@ -107,6 +107,9 @@
 //!     ["--input", #[option] path] => {
 //!         input = path;
 //!     }
+//!     /// A really long argument that exceeds usage limit and forces the documentation to wrap around with newlines.
+//!     ["--really-really-really-long-argument", thing] => {
+//!     }
 //!     /// Takes argument at <foo> and <bar>.
 //!     ///
 //!     ///    * This is an indented message. The first alphanumeric character determines the indentation to use.

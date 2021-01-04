@@ -188,13 +188,25 @@ impl<'a> fmt::Display for HelpFormat<'a> {
 
         if !self.help.switches.is_empty() {
             writeln!(f, "Options:")?;
+            let mut first = true;
 
-            for d in self.help.switches {
-                writeln!(
-                    f,
-                    "{}",
-                    TextWrap::switch(&d.usage, &d.docs, self.width, self.padding, usage_len)
-                )?;
+            let mut it = self.help.switches.iter().peekable();
+
+            while let Some(d) = it.next() {
+                let first = std::mem::take(&mut first);
+                let more = it.peek().is_some();
+
+                let wrap = TextWrap {
+                    init: &d.usage,
+                    docs: &d.docs,
+                    width: self.width,
+                    padding: self.padding,
+                    init_len: Some(usage_len),
+                    first,
+                    more,
+                };
+
+                writeln!(f, "{}", wrap)?;
             }
         }
 
@@ -208,7 +220,12 @@ struct TextWrap<'a> {
     docs: &'a [&'static str],
     width: usize,
     padding: usize,
+    /// The maximum init length permitted.
     init_len: Option<usize>,
+    /// If this is the first element.
+    first: bool,
+    /// If there are more elements coming after this.
+    more: bool,
 }
 
 impl<'a> TextWrap<'a> {
@@ -219,192 +236,172 @@ impl<'a> TextWrap<'a> {
             width,
             padding,
             init_len: None,
+            first: true,
+            more: false,
         }
     }
 
-    fn switch(
-        init: &'a str,
-        docs: &'a [&'static str],
-        width: usize,
-        padding: usize,
-        init_len: usize,
-    ) -> Self {
-        TextWrap {
-            init,
-            docs,
-            width,
-            padding,
-            init_len: Some(init_len),
+    fn wrap(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut it = self.docs.iter().peekable();
+
+        // No documentation lines.
+        if it.peek().is_none() {
+            fill_spaces(f, self.padding)?;
+            f.write_str(self.init)?;
+            return Ok(());
+        }
+
+        let init_len = self.init_len.unwrap_or(self.init.len());
+
+        let (long, mut init) = if self.init.len() + self.padding > init_len {
+            (true, None)
+        } else {
+            (false, Some(&self.init))
+        };
+
+        // NB: init line is broader than maximum permitted init length.
+        if long {
+            // If we're not the first line, add a newline to visually separate
+            // the line with the long usage.
+            if !self.first {
+                writeln!(f)?;
+            }
+
+            fill_spaces(f, self.padding)?;
+            writeln!(f, "{}", self.init)?;
+        }
+
+        let fill = init_len + self.padding;
+
+        let trim = match it.peek() {
+            Some(line) => Some(chars_count(line.as_ref(), |c| c == ' ')),
+            None => None,
+        };
+
+        while let Some(line) = it.next() {
+            let mut line = line.as_ref();
+
+            // Trim the line by skipping the whitespace common to all lines..
+            if let Some(trim) = trim {
+                line = skip_chars(line, trim);
+
+                // Whole line was trimmed.
+                if line.is_empty() {
+                    writeln!(f)?;
+                    continue;
+                }
+            }
+
+            // Whitespace prefix currently in use.
+            let ws_fill = next_index(line, char::is_alphanumeric).unwrap_or_default();
+            let mut line_first = true;
+
+            loop {
+                let fill = if !std::mem::take(&mut line_first) {
+                    fill + ws_fill
+                } else {
+                    fill
+                };
+
+                let mut space_span = None;
+
+                loop {
+                    let c = space_span.map(|(_, e)| e).unwrap_or_default();
+
+                    let (start, leap) = match line[c..].find(' ') {
+                        Some(i) => {
+                            let leap = next_index(&line[c + i..], |c| c != ' ').unwrap_or(1);
+                            (c + i, leap)
+                        }
+                        None => {
+                            // if the line fits within the current target fill,
+                            // include all of it.
+                            if line.len() + fill <= self.width {
+                                space_span = None;
+                            }
+
+                            break;
+                        }
+                    };
+
+                    if start + fill > self.width {
+                        break;
+                    }
+
+                    space_span = Some((start, start + leap));
+                }
+
+                let init_len = if let Some(init) = init.take() {
+                    fill_spaces(f, self.padding)?;
+                    f.write_str(init)?;
+                    self.padding + init.len()
+                } else {
+                    0
+                };
+
+                fill_spaces(f, fill.saturating_sub(init_len))?;
+
+                if let Some((start, end)) = space_span {
+                    writeln!(f, "{}", &line[..start])?;
+                    line = &line[end..];
+                    continue;
+                }
+
+                f.write_str(line)?;
+                break;
+            }
+
+            if it.peek().is_some() {
+                writeln!(f)?;
+            }
+        }
+
+        // If we're not the first line, add a newline to visually separate the
+        // line with the long usage.
+        if long && !self.first && self.more {
+            writeln!(f)?;
+        }
+
+        return Ok(());
+
+        /// Get the next index that is alphanumeric.
+        fn next_index(s: &str, p: fn(char) -> bool) -> Option<usize> {
+            Some(s.char_indices().skip_while(|(_, c)| !p(*c)).next()?.0)
+        }
+
+        /// Count the number of spaces in the string, and return the first index that is not a space.
+        fn chars_count(s: &str, p: fn(char) -> bool) -> usize {
+            s.chars().take_while(|c| p(*c)).count()
+        }
+
+        /// Skip the given number of characters.
+        fn skip_chars(s: &str, count: usize) -> &str {
+            let e = s
+                .char_indices()
+                .skip(count)
+                .map(|(i, _)| i)
+                .next()
+                .unwrap_or(s.len());
+
+            &s[e..]
+        }
+
+        fn fill_spaces(f: &mut fmt::Formatter<'_>, mut count: usize) -> fmt::Result {
+            // Static buffer for quicker whitespace filling.
+            static BUF: &str = "                                                                ";
+
+            while count > 0 {
+                f.write_str(&BUF[..usize::min(count, BUF.len())])?;
+                count = count.saturating_sub(BUF.len());
+            }
+
+            Ok(())
         }
     }
 }
 
 impl fmt::Display for TextWrap<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        textwrap(
-            f,
-            self.docs,
-            self.width,
-            self.padding,
-            &self.init,
-            self.init_len,
-        )?;
-
-        Ok(())
-    }
-}
-
-/// Utility for the bytewise wrapping of text.
-fn textwrap<I>(
-    f: &mut fmt::Formatter<'_>,
-    lines: I,
-    width: usize,
-    padding: usize,
-    init: &str,
-    init_len: Option<usize>,
-) -> fmt::Result
-where
-    I: IntoIterator,
-    I::Item: AsRef<str>,
-{
-    let mut it = lines.into_iter().peekable();
-
-    // No documentation lines.
-    if it.peek().is_none() {
-        fill_spaces(f, padding)?;
-        f.write_str(init)?;
-        return Ok(());
-    }
-
-    let init_len = init_len.unwrap_or(init.len());
-
-    // NB: init line is broader than maximum permitted init length.
-    let mut init = if init.len() + padding > init_len {
-        fill_spaces(f, padding)?;
-        writeln!(f, "{}", init)?;
-        None
-    } else {
-        Some(init)
-    };
-
-    let fill = init_len + padding;
-
-    let trim = match it.peek() {
-        Some(line) => Some(chars_count(line.as_ref(), |c| c == ' ')),
-        None => None,
-    };
-
-    while let Some(line) = it.next() {
-        let mut line = line.as_ref();
-
-        // Trim the line by skipping the whitespace common to all lines..
-        if let Some(trim) = trim {
-            line = skip_chars(line, trim);
-
-            // Whole line was trimmed.
-            if line.is_empty() {
-                writeln!(f)?;
-                continue;
-            }
-        }
-
-        // Whitespace prefix currently in use.
-        let ws_fill = next_index(line, char::is_alphanumeric).unwrap_or_default();
-        let mut line_first = true;
-
-        loop {
-            let fill = if !std::mem::take(&mut line_first) {
-                fill + ws_fill
-            } else {
-                fill
-            };
-
-            let mut space_span = None;
-
-            loop {
-                let c = space_span.map(|(_, e)| e).unwrap_or_default();
-
-                let (start, leap) = match line[c..].find(' ') {
-                    Some(i) => {
-                        let leap = next_index(&line[c + i..], |c| c != ' ').unwrap_or(1);
-                        (c + i, leap)
-                    }
-                    None => {
-                        // if the line fits within the current target fill,
-                        // include all of it.
-                        if line.len() + fill <= width {
-                            space_span = None;
-                        }
-
-                        break;
-                    }
-                };
-
-                if start + fill > width {
-                    break;
-                }
-
-                space_span = Some((start, start + leap));
-            }
-
-            let init_len = if let Some(init) = init.take() {
-                fill_spaces(f, padding)?;
-                f.write_str(init)?;
-                padding + init.len()
-            } else {
-                0
-            };
-
-            fill_spaces(f, fill.saturating_sub(init_len))?;
-
-            if let Some((start, end)) = space_span {
-                writeln!(f, "{}", &line[..start])?;
-                line = &line[end..];
-                continue;
-            }
-
-            f.write_str(line)?;
-            break;
-        }
-
-        if it.peek().is_some() {
-            writeln!(f)?;
-        }
-    }
-
-    return Ok(());
-
-    /// Get the next index that is alphanumeric.
-    fn next_index(s: &str, p: fn(char) -> bool) -> Option<usize> {
-        Some(s.char_indices().skip_while(|(_, c)| !p(*c)).next()?.0)
-    }
-
-    /// Count the number of spaces in the string, and return the first index that is not a space.
-    fn chars_count(s: &str, p: fn(char) -> bool) -> usize {
-        s.chars().take_while(|c| p(*c)).count()
-    }
-
-    /// Skip the given number of characters.
-    fn skip_chars(s: &str, count: usize) -> &str {
-        let e = s
-            .char_indices()
-            .skip(count)
-            .map(|(i, _)| i)
-            .next()
-            .unwrap_or(s.len());
-
-        &s[e..]
-    }
-
-    fn fill_spaces(f: &mut fmt::Formatter<'_>, mut count: usize) -> fmt::Result {
-        // Static buffer for quicker whitespace filling.
-        static BUF: &str = "                                                                ";
-
-        while count > 0 {
-            f.write_str(&BUF[..usize::min(count, BUF.len())])?;
-            count = count.saturating_sub(BUF.len());
-        }
-
-        Ok(())
+        self.wrap(f)
     }
 }

@@ -32,7 +32,7 @@ argwerk::define! {
     ["--input", #[option] path] => {
         input = path;
     }
-    /// A really long argument that exceeds usage limit and forced the documentation to wrap to the next line.
+    /// A really long argument that exceeds usage limit and forces the documentation to wrap around with newlines.
     ["--really-really-really-long-argument", thing] => {
     }
     /// Takes argument at <foo> and <bar>.
