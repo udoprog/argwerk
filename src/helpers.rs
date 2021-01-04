@@ -1,71 +1,64 @@
 use std::fmt;
 
+/// Padding to use between switch summary and help text.
+const PADDING: usize = 2;
+
+/// Documentation over a single switch.
 pub struct Switch {
-    #[doc(hidden)]
-    pub init: &'static str,
-    /// The documentation comments that were associated with the switch.
+    /// The usage summary of the switch.
+    ///
+    /// Like `--file, -f <path>`.
+    pub usage: &'static str,
+    /// Documentation comments associated with the switch.
     pub docs: &'static [&'static str],
-}
-
-/// Helper to format a documentation snippet.
-struct DocFmt<'a> {
-    init: &'a str,
-    docs: &'a [&'static str],
-    width: usize,
-    init_len: Option<usize>,
-}
-
-impl<'a> DocFmt<'a> {
-    fn new(init: &'a str, docs: &'a [&'static str], width: usize) -> Self {
-        Self {
-            init,
-            docs,
-            width,
-            init_len: None,
-        }
-    }
-
-    fn switch(init: &'a str, docs: &'a [&'static str], width: usize, init_len: usize) -> Self {
-        DocFmt {
-            init,
-            docs,
-            width,
-            init_len: Some(init_len),
-        }
-    }
-}
-
-impl fmt::Display for DocFmt<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.docs.is_empty() {
-            textwrap(f, self.docs, self.width, &self.init, self.init_len)?;
-        } else {
-            write!(f, "{}", self.init)?;
-        }
-
-        Ok(())
-    }
 }
 
 /// Helper that can be formatted into documentation text.
 pub struct Help {
-    /// The usage specifier used.
+    /// The verbatim usage summary specified when invoking the macro.
     pub usage: &'static str,
-    /// The documentation strings.
+    /// Documentation comments associated with the command.
     pub docs: &'static [&'static str],
-    /// Switches associated with the current command.
+    /// Switches associated with the command.
     pub switches: &'static [Switch],
 }
 
 impl Help {
     /// Format the help with the given config.
-    pub fn with_config(&self, width: usize) -> impl fmt::Display + '_ {
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), argwerk::Error> {
+    /// let args = argwerk::parse! {
+    ///     /// A simple test command.
+    ///     "command [-h]" {
+    ///         help: bool,
+    ///     }
+    ///     /// Prints the help.
+    ///     ///
+    ///     /// This includes:
+    ///     ///    * All the available switches.
+    ///     ///    * All the available positional arguments.
+    ///     ///    * Whatever else the developer decided to put in here! We even support wrapping comments which are overly long.
+    ///     ["-h" | "--help"] => {
+    ///         help = true;
+    ///         Ok(())
+    ///     }
+    /// }?;
+    ///
+    /// let formatted = format!("{}", args.help().with_width(120));
+    /// assert!(formatted.split('\n').any(|line| line.len() > 80));
+    /// assert!(formatted.split('\n').all(|line| line.len() < 120));
+    /// # Ok(()) }
+    /// ```
+    pub fn with_width(&self, width: usize) -> impl fmt::Display + '_ {
         WithConfig { help: self, width }
     }
 
     /// Internal helper to format the help with the default config.
     fn with_default(&self) -> impl fmt::Display + '_ {
-        self.with_config(80)
+        self.with_width(80)
     }
 }
 
@@ -85,16 +78,22 @@ impl<'a> fmt::Display for WithConfig<'a> {
         writeln!(f, "Usage: {name}", name = self.help.usage)?;
 
         if !self.help.docs.is_empty() {
-            writeln!(f, "{}", DocFmt::new("", &self.help.docs, self.width))?;
+            writeln!(f, "{}", TextWrap::new("", &self.help.docs, self.width))?;
         }
 
         writeln!(f)?;
 
-        let init_len = self
+        let usage_len = self
             .help
             .switches
             .iter()
-            .map(|d| d.init.len())
+            .map(|s| {
+                if s.docs.is_empty() {
+                    s.usage.len()
+                } else {
+                    s.usage.len() + PADDING
+                }
+            })
             .max()
             .unwrap_or_default();
 
@@ -105,9 +104,49 @@ impl<'a> fmt::Display for WithConfig<'a> {
                 writeln!(
                     f,
                     "{}",
-                    DocFmt::switch(&d.init, &d.docs, self.width, init_len)
+                    TextWrap::switch(&d.usage, &d.docs, self.width, usage_len)
                 )?;
             }
+        }
+
+        Ok(())
+    }
+}
+
+/// Helper to wrap documentation text.
+struct TextWrap<'a> {
+    init: &'a str,
+    docs: &'a [&'static str],
+    width: usize,
+    init_len: Option<usize>,
+}
+
+impl<'a> TextWrap<'a> {
+    fn new(init: &'a str, docs: &'a [&'static str], width: usize) -> Self {
+        Self {
+            init,
+            docs,
+            width,
+            init_len: None,
+        }
+    }
+
+    fn switch(init: &'a str, docs: &'a [&'static str], width: usize, init_len: usize) -> Self {
+        TextWrap {
+            init,
+            docs,
+            width,
+            init_len: Some(init_len),
+        }
+    }
+}
+
+impl fmt::Display for TextWrap<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.docs.is_empty() {
+            textwrap(f, self.docs, self.width, &self.init, self.init_len)?;
+        } else {
+            write!(f, "{}", self.init)?;
         }
 
         Ok(())

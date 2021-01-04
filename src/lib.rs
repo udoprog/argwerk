@@ -430,15 +430,9 @@ pub enum ErrorKind {
 /// You specify documentation for switches and arguments using doc comments
 /// (e.g. `/// Hello World`). These are automatically wrapped to 80 characters.
 ///
-/// Documentation can be formatted using the following associated functions to
-/// the return value of the macro:
-///
-/// * `help` - Which returns an implementation of [std::fmt::Display] allowing
-///   it to be formatted at-will.
-/// * `help_with` - Same as `help`, except that it allows for specifying the
-///   character width to format the messages using.
-///
-/// > The following makes use of the `help` generated function.
+/// Documentation can be formatted with the `help` associated function, which
+/// returns a static instance of [Help]. This can be further configured using
+/// functions such as [Help::with_width].
 ///
 /// ```rust
 /// # fn main() -> Result<(), argwerk::Error> {
@@ -460,7 +454,7 @@ pub enum ErrorKind {
 /// }?;
 ///
 /// if args.help {
-///     println!("{}", args.help());
+///     println!("{}", args.help().with_width(120));
 /// }
 /// # Ok(()) }
 /// ```
@@ -668,11 +662,6 @@ macro_rules! __internal {
         concat!("<", stringify!($argument), ">");
     };
 
-    // Generate the doc tail, which is specified in case any doc comments are
-    // available.
-    (@doc-tail) => { "" };
-    (@doc-tail $($tt:tt)+) => { "  " };
-
     // Parse the rest of the available arguments.
     (@positional #[rest] $it:ident, $arg:ident) => {
         (&mut $it).map(String::from).collect::<Vec<String>>();
@@ -770,10 +759,9 @@ macro_rules! __internal {
         [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
     ) => {
         $crate::Switch {
-            init: concat!(
+            usage: concat!(
                 "  ", $crate::__internal!(@doc $(#[$($first_meta)*])* $first),
                 $(" ", $crate::__internal!(@doc $(#[$($rest_meta)*])* $rest),)*
-                $crate::__internal!(@doc-tail $($doc)*)
             ),
             docs: &[$($doc,)*]
         }
@@ -785,10 +773,9 @@ macro_rules! __internal {
         [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*]
     ) => {
         $crate::Switch {
-            init: concat!(
+            usage: concat!(
                 "  ", $first, $(", ", $rest,)*
                 $(" ", $crate::__internal!(@doc $(#[$($arg_meta)*])* $arg),)*
-                $crate::__internal!(@doc-tail $($doc)*)
             ),
             docs: &[$($doc,)*]
         }
