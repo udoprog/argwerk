@@ -708,18 +708,17 @@ macro_rules! __impl {
             where
                 I: IntoIterator,
                 I::Item: AsRef<str>,
-                String: From<I::Item>,
                 Box<str>: From<I::Item>,
+                String: From<I::Item>,
             {
                 let mut it = it.into_iter().peekable();
+                $(let mut $field: $ty = $crate::__impl!(@init $($expr)*);)*
 
-                $($crate::__impl!(@field $field, $ty $(= $expr)*);)*
-
-                while let Some(__argwerk_arg) = it.next() {
-                    $crate::__impl!(@branches __argwerk_arg, it, $($config)*);
+                while let Some(__argwerk_item) = it.next() {
+                    $crate::__impl!(@branches __argwerk_item, it, $($config)*);
                 }
 
-                Ok(Self { $($field,)* })
+                Ok(Self { $($field),* })
             }
         }
     };
@@ -749,101 +748,18 @@ macro_rules! __impl {
         concat!("<", stringify!($argument), ">");
     };
 
-    // Parse the rest of the available arguments.
-    (@positional #[rest] $it:ident, $arg:ident) => {
-        (&mut $it).map(String::from).collect::<Vec<String>>();
-    };
-
-    // Parse an optional argument.
-    (@positional #[option] $it:ident, $arg:ident) => {
-        match $it.peek() {
-            Some(n) => if !$crate::__impl!(@is-switch n) {
-                $it.next().map(String::from)
-            } else {
-                None
-            }
-            None => None,
-        }
-    };
-
-    // Parse the rest of the arguments.
-    (@positional $it:ident, $arg:ident) => {
-        match $it.next() {
-            Some($arg) => String::from($arg),
-            None => return Err(
-                ::argwerk::Error::new(
-                    ::argwerk::ErrorKind::MissingPositional {
-                        name: stringify!($arg),
-                    }
-                )
-            )
-        }
-    };
-
-    // Parse the rest of the available arguments.
-    (@first #[rest] $argument:ident, $it:ident) => {
-        Some($argument).into_iter().chain(&mut $it).map(String::from).collect::<Vec<_>>();
-    };
-
-    // Parse an optional argument.
-    (@first #[option] $argument:ident, $it:ident) => {
-        Some(String::from($argument))
-    };
-
-    // Parse as its argument.
-    (@first $argument:ident, $it:ident) => {
-        String::from($argument)
-    };
-
-    // Try to parse an argument to a parameter.
-    (@switch-argument $switch:ident, $it:ident, $argument:ident) => {
-        match $it.next() {
-            Some($argument) => String::from($argument),
-            None => return Err(
-                ::argwerk::Error::new(
-                    ::argwerk::ErrorKind::MissingSwitchArgument {
-                        switch: $crate::__impl!(@to-str &$switch).into(),
-                        argument: stringify!($argument),
-                    }
-                )
-            ),
-        }
-    };
-
-    // Parse the rest of the available arguments.
-    (@switch-argument #[rest] $switch:ident, $it:ident, $arg:ident) => {
-        (&mut $it).map(String::from).collect::<Vec<_>>()
-    };
-
-    // Parse an optional argument.
-    (@switch-argument #[option] $switch:ident, $it:ident, $arg:ident) => {
-        match $it.peek() {
-            Some(n) => if !$crate::__impl!(@is-switch n) {
-                $it.next().map(String::from)
-            } else {
-                None
-            }
-            None => None,
-        }
-    };
-
-    (@field $field:ident, $ty:ty) => {
-        let mut $field: $ty = Default::default();
-    };
-
-    (@field $field:ident, $ty:ty = $expr:expr) => {
-        let mut $field: $ty = $expr;
-    };
+    (@init) => { Default::default() };
+    (@init $expr:expr) => { $expr };
 
     // Generate help for positional branches.
     (@switch-help
         $($doc:literal)*
-        [ $(#[$($first_meta:tt)*])* $first:ident $(, $(#[$($rest_meta:tt)*])* $rest:ident)* ]
+        [ $(#$first_m:tt)* $first:ident $(, $(#$rest_m:tt)* $rest:ident)* ]
     ) => {
         $crate::Switch {
             usage: concat!(
-                $crate::__impl!(@doc $(#[$($first_meta)*])* $first),
-                $(" ", $crate::__impl!(@doc $(#[$($rest_meta)*])* $rest),)*
+                $crate::__impl!(@doc $(#$first_m)* $first),
+                $(" ", $crate::__impl!(@doc $(#$rest_m)* $rest),)*
             ),
             docs: &[$($doc,)*]
         }
@@ -852,12 +768,12 @@ macro_rules! __impl {
     // Generate help for matching branches.
     (@switch-help
         $($doc:literal)*
-        [$first:literal $(| $rest:literal)* $(, $(#[$($arg_meta:tt)*])* $arg:ident)*]
+        [$first:literal $(| $rest:literal)* $(, $(#$arg_m:tt)* $arg:ident)*]
     ) => {
         $crate::Switch {
             usage: concat!(
                 $first, $(", ", $rest,)*
-                $(" ", $crate::__impl!(@doc $(#[$($arg_meta)*])* $arg),)*
+                $(" ", $crate::__impl!(@doc $(#$arg_m)* $arg),)*
             ),
             docs: &[$($doc,)*]
         }
@@ -873,7 +789,7 @@ macro_rules! __impl {
         $switch:ident, $it:ident,
         $($(#[$_meta:meta])* [$($config:tt)*] $(if $cond:expr)? => $block:block)*
     ) => {
-        match $crate::__impl!(@to-str &$switch) {
+        match $switch.as_ref() {
             $(__argwerk_name if $crate::__impl!(@pat __argwerk_name, [$($config)*]) $(&& $cond)* => {
                 let __argwerk_name = __argwerk_name.into();
 
@@ -886,14 +802,14 @@ macro_rules! __impl {
                     }));
                 }
             })*
-            __argwerk_name => {
-                if $crate::__impl!(@is-switch __argwerk_name) {
+            name => {
+                if $crate::__impl!(@is-switch name) {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
-                        switch: __argwerk_name.into()
+                        switch: name.into()
                     }));
                 } else {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
-                        argument: __argwerk_name.into()
+                        argument: name.into()
                     }));
                 }
             }
@@ -901,12 +817,12 @@ macro_rules! __impl {
     };
 
     // Generates a branch pattern for positional arguments.
-    (@pat $v:ident, [$(#$first_meta:tt)* $first:ident $(, $(#$rest_meta:tt)* $rest:ident)*]) => {
+    (@pat $v:ident, [$(#$first_m:tt)* $first:ident $(, $(#$rest_m:tt)* $rest:ident)*]) => {
         true
     };
 
     // Generates a branch pattern for switches.
-    (@pat $v:ident, [$first:literal $(| $rest:literal)* $(, $(#$arg_meta:tt)* $arg:ident)*]) => {
+    (@pat $v:ident, [$first:literal $(| $rest:literal)* $(, $(#$arg_m:tt)* $arg:ident)*]) => {
         match $v {
             $first $(| $rest)* => true,
             _ => false,
@@ -916,27 +832,97 @@ macro_rules! __impl {
     // Match positional arguments.
     (@bindings
         $switch:ident, $it:ident,
-        [$(#$first_meta:tt)* $first:ident $(, $(#$rest_meta:tt)? $rest:ident)*]
+        [$(#$first_m:tt)? $first:ident $(, $(#$rest_m:tt)? $rest:ident)*]
     ) => {
-        let $first = $crate::__impl!(@first $(#$first_meta)* $switch, $it);
-        $(let $rest = $crate::__impl!(@positional $(#$rest_meta)* $it, $rest);)*
+        let $first = $crate::__var!(first $it, $(#$first_m)* $switch);
+        $(let $rest = $crate::__var!(pos $it, $(#$rest_m)* $rest);)*
     };
 
     // A single branch expansion.
     (@bindings
         $switch:ident, $it:ident,
-        [$_a:literal $(| $_b:literal)* $(, $(#$arg_meta:tt)? $arg:ident)*]
+        [$_a:literal $(| $_b:literal)* $(, $(#$arg_m:tt)? $arg:ident)*]
     ) => {
-        $(let $arg = $crate::__impl!(@switch-argument $(#$arg_meta)* $switch, $it, $arg);)*
-    };
-
-    // Get argument as a `&str` through `AsRef<str>`.
-    (@to-str $n:expr) => {
-        std::convert::AsRef::<str>::as_ref($n)
+        $(let $arg = $crate::__var!(switch $switch, $it, $(#$arg_m)* $arg);)*
     };
 
     // Test if `$n` is switch or not.
     (@is-switch $n:expr) => {
-        $crate::__impl!(@to-str $n).starts_with('-')
+        ::std::convert::AsRef::<str>::as_ref($n).starts_with('-')
+    };
+}
+
+/// Helper to decode a variable.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __var {
+    // Parse the rest of the available arguments.
+    (first $it:ident, #[rest] $var:ident) => {
+        Some(String::from($var)).into_iter().chain((&mut $it).map(String::from)).collect::<Vec<_>>();
+    };
+
+    // Parse an optional argument.
+    (first $it:ident, #[option] $var:ident) => {
+        Some(String::from($var))
+    };
+
+    // Parse as its argument.
+    (first $it:ident, $var:ident) => {
+        String::from($var)
+    };
+
+    // Parse the rest of the available arguments.
+    (pos $it:ident, #[rest] $_:ident) => {
+        (&mut $it).map(String::from).collect::<Vec<_>>();
+    };
+
+    // Parse an optional argument.
+    (pos $it:ident, #[option] $_:ident) => {
+        match $it.peek() {
+            Some(n) if !$crate::__impl!(@is-switch n) => $it.next().map(String::from),
+            _ => None,
+        }
+    };
+
+    // Parse the rest of the arguments.
+    (pos $it:ident, $var:ident) => {
+        match $it.next() {
+            Some($var) => String::from($var),
+            None => return Err(
+                ::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingPositional {
+                        name: stringify!($var),
+                    }
+                )
+            )
+        }
+    };
+
+    // Try to parse an argument to a parameter.
+    (switch $switch:ident, $it:ident, $var:ident) => {
+        match $it.next() {
+            Some($var) => String::from($var),
+            None => return Err(
+                ::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingSwitchArgument {
+                        switch: $switch.into(),
+                        argument: stringify!($var),
+                    }
+                )
+            ),
+        }
+    };
+
+    // Parse the rest of the available arguments.
+    (switch $switch:ident, $it:ident, #[rest] $arg:ident) => {
+        (&mut $it).map(String::from).collect::<Vec<_>>()
+    };
+
+    // Parse an optional argument.
+    (switch $switch:ident, $it:ident, #[option] $arg:ident) => {
+        match $it.peek() {
+            Some(n) if !$crate::__impl!(@is-switch n) => $it.next().map(String::from),
+            _ => None,
+        }
     };
 }
