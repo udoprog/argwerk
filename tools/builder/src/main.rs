@@ -25,19 +25,20 @@ fn size(path: &Path) -> io::Result<u64> {
     Ok(m.len())
 }
 
-fn depndency_version(path: &Path, krate: &str) -> Result<String> {
+fn dependency_version(path: &Path, krate: &str) -> Result<Option<String>> {
     use serde::Deserialize;
     use std::collections::HashMap;
 
     let manifest = fs::read(path.join("Cargo.toml"))?;
-    let manifest: Manifest = toml::de::from_slice(&manifest)?;
+    let mut manifest: Manifest = toml::de::from_slice(&manifest)?;
     let dependency = manifest
         .dependencies
-        .get(krate)
+        .remove(krate)
         .ok_or_else(|| anyhow!("missing crate `{}`", krate))?;
 
     return match dependency {
-        Dependency::Version(string) => Ok(string.clone()),
+        Dependency::Version(string) => Ok(Some(string)),
+        Dependency::Entry(entry) => Ok(entry.version),
     };
 
     #[derive(Deserialize)]
@@ -49,6 +50,13 @@ fn depndency_version(path: &Path, krate: &str) -> Result<String> {
     #[serde(untagged)]
     enum Dependency {
         Version(String),
+        Entry(DependencyEntry),
+    }
+
+    #[derive(Deserialize)]
+    struct DependencyEntry {
+        #[serde(default)]
+        version: Option<String>,
     }
 }
 
@@ -100,6 +108,8 @@ struct Project {
     rebuild: time::Duration,
     d_size: u64,
     size: u64,
+    version: Option<String>,
+    deps: usize,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -107,17 +117,10 @@ fn main() -> anyhow::Result<()> {
 
     let projects = Path::new("projects");
 
-    let clap_project = projects.join("project").join("clap");
-    let clap_version = depndency_version(&clap_project, "clap")?;
-    // remove 2 for the project itself and anyhow.
-    let clap_deps = count_deps(&clap_project)?.saturating_sub(2);
-
     for f in std::fs::read_dir(projects.join("project"))? {
         let f = f?;
         let path = f.path();
-
-        println!("building: {}", path.display());
-
+        
         let name = match path.file_stem() {
             Some(name) => name
                 .to_str()
@@ -125,6 +128,11 @@ fn main() -> anyhow::Result<()> {
                 .to_owned(),
             None => continue,
         };
+
+        println!("building: {}", path.display());
+
+        let version = dependency_version(&path, &name)?;
+        let deps = count_deps(&path)?.saturating_sub(2);
 
         cargo(&projects, "clean", &[])?;
 
@@ -154,6 +162,8 @@ fn main() -> anyhow::Result<()> {
             rebuild,
             d_size,
             size,
+            version,
+            deps,
         });
     }
 
@@ -162,13 +172,32 @@ fn main() -> anyhow::Result<()> {
     println!("| project    | cold build (release) | rebuild* (release) | size (release) |");
     println!("|------------|----------------------|--------------------|----------------|");
 
+    let mut footnotes = Vec::new();
+    let mut count = 2;
+
     for project in results {
-        let extra = if project.name == "clap" { "**" } else { "" };
+        let asterisk;
+
+        if let Some(version) = &project.version {
+            asterisk = std::iter::repeat('*').take(count).collect::<String>();
+
+            footnotes.push(format!(
+                "> {}: {name} `{version}` including {deps} dependencies.<br>",
+                asterisk,
+                name = project.name,
+                version = version,
+                deps = project.deps,
+            ));
+
+            count += 1;
+        } else {
+            asterisk = String::from("");
+        }
 
         println!(
             "| {name}{extra} | {d_build:?} ({build:?}) | {d_rebuild:?} ({rebuild:?}) | {d_size}k ({size}k) |",
             name = project.name,
-            extra = extra,
+            extra = asterisk,
             d_build = project.d_build,
             build = project.build,
             d_rebuild = project.d_rebuild,
@@ -178,8 +207,11 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
-    println!("> *: Rebuild was triggered by adding a single newline to `main.rs`.<br>");
-    println!("> **: Clap includes {clap_deps} dependencies. This was built against clap `{clap_version}`.<br>", clap_deps = clap_deps, clap_version = clap_version);
+    println!("> *: rebuild was triggered by adding a single newline to `main.rs`.<br>");
+
+    for footnote in footnotes {
+        println!("{}", footnote);
+    }
 
     Ok(())
 }

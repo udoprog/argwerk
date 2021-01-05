@@ -137,22 +137,22 @@ dbg!(args);
 argwerk aims to be a lightweight dependency that is fast to compile. This is
 how it stacks up to other projects in that regard.
 
-The following table was generated with:
+The following summary was generated from the [projects found here].
+
+| project    | cold build (release) | rebuild* (release) | size (release) |
+|------------|----------------------|--------------------|----------------|
+| argh** | 5.142723s (4.849361s) | 416.9594ms (468.7003ms) | 297k (180k) |
+| argwerk | 1.443709s (1.2971457s) | 403.0641ms (514.036ms) | 265k (185k) |
+| clap*** | 11.9863223s (13.1338799s) | 551.407ms (807.8939ms) | 2188k (750k) |
+> *: rebuild was triggered by adding a single newline to `main.rs`.<br>
+> **: argh `0.1.4` including 11 dependencies.<br>
+> ***: clap `3.0.0-beta.2` including 32 dependencies.<br>
+
+You can try and build it yourself with:
 
 ```sh
 cargo run --manifest-path tools/builder/Cargo.toml
 ```
-
-It builds and measures the [projects found here]. These are the results:
-
-| project    | cold build (release)      | rebuild* (release)      | size (release) |
-|------------|---------------------------|-------------------------|----------------|
-| argh       | 5.0839426s (4.5671066s)   | 405.1443ms (465.8606ms) | 297k (180k)    |
-| argwerk    | 1.2646615s (1.2352931s)   | 388.3651ms (471.8421ms) | 265k (185k)    |
-| clap**     | 10.6010515s (12.1861838s) | 522.9817ms (759.0176ms) | 2188k (750k)   |
-
-> *: Rebuild was triggered by adding a single newline to `main.rs`.<br>
-> **: Clap includes ~38 dependencies.<br>
 
 [projects found here]: https://github.com/udoprog/argwerk/tree/main/projects
 [argwerk::define]: https://docs.rs/argwerk/0/argwerk/macro.define.html
