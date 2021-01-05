@@ -21,8 +21,6 @@ We *do not* provide:
 * As-close-to correct line wrapping with wide unicode characters as possible
   (see [textwrap]).
 * Complex command structures like subcommands.
-* Parsing into [OsString]s. The default parser will panic in case not valid
-  unicode is passed into it in accordance with [std::env::args].
 
 For how to use, see the documentation of [argwerk::define] and
 [argwerk::args].
@@ -73,6 +71,8 @@ arguments around.
 > ```
 
 ```rust
+use std::ffi::OsString;
+
 argwerk::define! {
     /// A command touring the capabilities of argwerk.
     #[usage = "tour [-h]"]
@@ -83,6 +83,7 @@ argwerk::define! {
         input: Option<String>,
         limit: usize = 10,
         positional: Option<(String, Option<String>)>,
+        raw: Option<OsString>,
         rest: Vec<String>,
     }
     /// Prints the help.
@@ -106,6 +107,13 @@ argwerk::define! {
     /// Read from the specified input.
     ["--input", #[option] path] => {
         input = path;
+    }
+    /// A really long argument that exceeds usage limit and forces the documentation to wrap around with newlines.
+    ["--really-really-really-long-argument", thing] => {
+    }
+    /// A raw argument that passes whatever was passed in from the operating system.
+    ["--raw", #[os] arg] => {
+        raw = Some(arg);
     }
     /// Takes argument at <foo> and <bar>.
     ///

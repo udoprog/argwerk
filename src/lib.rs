@@ -346,6 +346,12 @@ pub enum ErrorKind {
         reason: Option<&'static str>,
     },
     /// Failed to parse input as unicode string.
+    ///
+    /// This is raised in case argwerk needs to treat an input as a string, but
+    /// that is not possible.
+    ///
+    /// This is required if the string needs to be used in a [switch
+    /// branch][define#parsing-switches-likes---help].
     InputError {
         /// The underlying error.
         error: crate::helpers::InputError,
@@ -389,66 +395,14 @@ pub enum ErrorKind {
 /// [ErrorKind::Error] error to be raised associated with that argument
 /// with the relevant error attached.
 ///
-/// The [parse] macro can be invoked in two ways.
+/// ## The generated arguments structure
 ///
-/// Using `std::env::args()` to get arguments from the environment:
+/// The first part of the macro defines the state available to the parser. These
+/// are field-like declarations which can specify a default initialization
+/// value. Fields which do not specify a value will be initialized using
+/// [Default::default]. This is the only required component of the macro.
 ///
-/// ```rust
-/// argwerk::define! {
-///     /// A simple test command.
-///     #[usage = "command [-h]"]
-///     struct Args {
-///         help: bool,
-///         limit: usize = 10,
-///     }
-///     /// Print this help.
-///     ["-h" | "--help"] => {
-///         help = true;
-///     }
-/// }
-///
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = Args::args()?;
-///
-/// if args.help {
-///     println!("{}", Args::help());
-/// }
-/// # Ok(()) }
-/// ```
-///
-/// Or explicitly specifying an iterator to use with `<into_iter> => <config>`.
-/// This works with anything that can be converted into an iterator using
-/// [IntoIterator] where its items implements [AsRef\<str\>][AsRef].
-///
-/// ```rust
-/// argwerk::define! {
-///     /// A simple test command.
-///     #[usage = "command [-h]"]
-///     struct Args {
-///         help: bool,
-///         positional: Option<(String, String, String)>,
-///     }
-///     [a, b, c] => {
-///         positional = Some((a, b, c));
-///     }
-/// }
-///
-/// # fn main() -> Result<(), argwerk::Error> {
-/// let args = Args::parse(vec!["foo", "bar", "baz"])?;
-///
-/// assert_eq!(args.positional, Some((String::from("foo"), String::from("bar"), String::from("baz"))));
-/// # Ok(()) }
-/// ```
-///
-/// ## Args structure
-///
-/// The first part of the [parse] macro defines the state available to the
-/// parser. These are field-like declarations which can specify a default value.
-/// Fields which do not specify an initialization value will be initialized
-/// through [Default::default]. This is the only required component of the
-/// macro.
-///
-/// The macro returns an anonymous `Args` struct with fields matching this
+/// The macro produces an arguments struct with fields matching this
 /// declaration. This can be used to conveniently group and access data
 /// populated during argument parsing.
 ///
@@ -482,15 +436,59 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
-/// ## Parsing switches
+/// This structure also has two associated functions which can be used to parse
+/// input:
 ///
-/// The basic form of an argument branch parsing a switch is one which matches
-/// on a string literal. The string literal (e.g. `"--help"`) will then be
-/// treated as the switch for the branch. You can specify multiple matches for
-/// each branch by separating them with a pipe (`|`).
+/// * `args` - Which parses OS arguments using [std::env::args_os].
+/// * `parse` - Which can be provided with a custom iterator. This is what's
+///   used in almost all the examples.
 ///
-/// > Note: it's not necessary that switches start with `-`, but this is assumed
-/// > for convenience.
+/// When using the custom parse function each item produced by the passed in
+/// iterator must implement [TryIntoInput]. This is implemented by types such
+/// as: `&str`, `String`, `OsString` and `&OsStr`.
+///
+/// ```rust
+/// argwerk::define! {
+///     /// A simple test command.
+///     #[usage = "command [-h]"]
+///     struct Args {
+///         help: bool,
+///         limit: usize = 10,
+///         positional: Option<(String, String, String)>,
+///     }
+///     /// Print this help.
+///     ["-h" | "--help"] => {
+///         help = true;
+///     }
+///     [a, b, c] => {
+///         positional = Some((a, b, c));
+///     }
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::args()?;
+///
+/// if args.help {
+///     println!("{}", Args::help());
+/// }
+///
+/// let args = Args::parse(vec!["foo", "bar", "baz"])?;
+///
+/// assert_eq!(args.positional, Some((String::from("foo"), String::from("bar"), String::from("baz"))));
+/// # Ok(()) }
+/// ```
+///
+/// ## Parsing switches likes `--help`
+///
+/// The basic form of an argument branch one which matches on a string literal.
+/// The string literal (e.g. `"--help"`) will then be treated as the switch for
+/// the branch. You can specify multiple matches for each branch by separating
+/// them with a pipe (`|`).
+///
+/// It's not necessary that switches start with `-`, but this is assumed for
+/// convenience. In particular, argwerk will treat any arguments starting with a
+/// hyphen as "switch-like". This is used to determine whether an argument is
+/// present if its optional (see later section).
 ///
 /// ```rust
 /// argwerk::define! {
@@ -517,10 +515,11 @@ pub enum ErrorKind {
 /// ## Parsing positional arguments
 ///
 /// Positional arguments are parsed by specifying a vector of bindings in a
-/// branch. Like `[foo, bar, baz]`.
+/// branch. Like `[foo, bar]`.
 ///
-/// The following is a basic example. Both `foo` and `bar` are required if the
-/// branch matches.
+/// The following is a basic example. Two arguments `foo` and `bar` are required
+/// if the branch matches. If there is no such input an
+/// [ErrorKind::MissingPositional] error will be raised.
 ///
 /// ```rust
 /// argwerk::define! {
@@ -643,7 +642,7 @@ pub enum ErrorKind {
 ///
 /// In argwerk you can specify that a branch takes a raw argument using the
 /// `#[os]` attribute. This value will then be an
-/// [OsString][::str::ffi::OsString] and represents exactly what was fed to your
+/// [OsString][::std::ffi::OsString] and represents exactly what was fed to your
 /// program from the operating system.
 ///
 /// ```rust
@@ -722,7 +721,7 @@ pub enum ErrorKind {
 ///
 /// An optional argument parses to `None` if:
 /// * There are no more arguments to parse.
-/// * The argument is a switch (starts with `-`).
+/// * The argument is "switch-like" (starts with `-`).
 ///
 /// ```rust
 /// argwerk::define! {
@@ -855,7 +854,7 @@ macro_rules! __impl {
                 switches: $crate::__impl!(@switches $($config)*)
             };
 
-            /// Parse [std::env::args].
+            /// Parse [std::env::args_os].
             $vis fn args() -> Result<Self, $crate::Error> {
                 let mut it = std::env::args_os();
                 it.next();

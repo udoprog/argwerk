@@ -4,7 +4,7 @@
 //! expected to be private and might change between minor releases.
 
 use std::error;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 
 /// Default width to use when wrapping lines.
@@ -507,11 +507,21 @@ impl fmt::Display for InputError {
 
 impl error::Error for InputError {}
 
-pub trait TryIntoInput {
+/// Trait implemented by types that can be parsed to the `parse` function of an
+/// arguments structure.
+///
+/// This trait is sealed, so that it cannot be implemented outside of the
+/// argwerk crate.
+///
+/// See [define][crate::define] for how its used.
+pub trait TryIntoInput: self::internal::Sealed {
+    #[doc(hidden)]
     fn try_as_str(&self) -> Result<&str, InputError>;
 
+    #[doc(hidden)]
     fn try_into_string(self) -> Result<String, InputError>;
 
+    #[doc(hidden)]
     fn into_os_string(self) -> OsString;
 }
 
@@ -564,4 +574,27 @@ impl TryIntoInput for OsString {
     fn into_os_string(self) -> OsString {
         self
     }
+}
+
+impl TryIntoInput for &OsStr {
+    #[inline]
+    fn try_as_str(&self) -> Result<&str, InputError> {
+        self.to_str().ok_or_else(|| InputError(()))
+    }
+
+    #[inline]
+    fn try_into_string(self) -> Result<String, InputError> {
+        Ok(self.to_str().ok_or_else(|| InputError(()))?.to_owned())
+    }
+
+    #[inline]
+    fn into_os_string(self) -> OsString {
+        self.to_owned()
+    }
+}
+
+mod internal {
+    pub trait Sealed {}
+
+    impl<T> Sealed for T where T: super::TryIntoInput {}
 }
