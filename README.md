@@ -20,7 +20,8 @@ We provide:
 We *do not* provide:
 * As-close-to correct line wrapping with wide unicode characters as possible
   (see [textwrap]).
-* Complex command structures like subcommands.
+* Built-in complex command structures like subcommands (see the
+  [subcommands] example for how this can be accomplished).
 
 For how to use, see the documentation of [argwerk::define] and
 [argwerk::args].
@@ -160,5 +161,6 @@ It builds and measures the [projects found here]. These are the results:
 [ok_or_else]: https://doc.rust-lang.org/std/option/enum.Option.html#method.ok_or_else
 [OsString]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
 [textwrap]: https://docs.rs/textwrap/0.13.2/textwrap/#displayed-width-vs-byte-size
+[subcommands]: https://github.com/udoprog/argwerk/blob/main/examples/subcommands.rs
 
 License: MIT/Apache-2.0

@@ -446,24 +446,32 @@ where
     }
 
     /// Get the next os string from the input.
-    pub fn next_os(&mut self) -> Result<Option<OsString>, InputError> {
+    pub fn next_os(&mut self) -> Option<OsString> {
         if let Some(item) = self.buf.take() {
-            return Ok(Some(item.into_os_string()));
+            return Some(item.into_os_string());
         }
 
         let item = match self.it.next() {
             Some(item) => item,
-            None => return Ok(None),
+            None => return None,
         };
 
-        Ok(Some(item.into_os_string()))
+        Some(item.into_os_string())
     }
 
     /// Take the next argument unless it looks like a switch.
     pub fn next_unless_switch(&mut self) -> Result<Option<String>, InputError> {
-        match self.peek()? {
-            Some(s) if !s.starts_with('-') => self.next(),
-            _ => Ok(None),
+        match self.peek() {
+            Some(s) if s.starts_with('-') => Ok(None),
+            _ => self.next(),
+        }
+    }
+
+    /// Take the next argument unless it looks like a switch.
+    pub fn next_unless_switch_os(&mut self) -> Option<OsString> {
+        match self.peek() {
+            Some(s) if s.starts_with('-') => None,
+            _ => self.next_os(),
         }
     }
 
@@ -482,17 +490,32 @@ where
         Ok(buf)
     }
 
-    fn peek(&mut self) -> Result<Option<&str>, InputError> {
+    /// Get the rest of available items as raw strings.
+    pub fn rest_os(&mut self) -> Vec<OsString> {
+        let mut buf = Vec::new();
+
+        if let Some(item) = self.buf.take() {
+            buf.push(item.into_os_string());
+        }
+
+        for item in &mut self.it {
+            buf.push(item.into_os_string());
+        }
+
+        buf
+    }
+
+    fn peek(&mut self) -> Option<&str> {
         if self.buf.is_none() {
             self.buf = self.it.next();
         }
 
         let item = match self.buf.as_ref() {
             Some(item) => item,
-            None => return Ok(None),
+            None => return None,
         };
 
-        Ok(Some(item.try_as_str()?))
+        item.try_as_str().ok()
     }
 }
 

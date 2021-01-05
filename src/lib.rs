@@ -18,7 +18,8 @@
 //! We *do not* provide:
 //! * As-close-to correct line wrapping with wide unicode characters as possible
 //!   (see [textwrap]).
-//! * Complex command structures like subcommands.
+//! * Built-in complex command structures like subcommands (see the
+//!   [subcommands] example for how this can be accomplished).
 //!
 //! For how to use, see the documentation of [argwerk::define] and
 //! [argwerk::args].
@@ -162,6 +163,7 @@
 //! [ok_or_else]: https://doc.rust-lang.org/std/option/enum.Option.html#method.ok_or_else
 //! [OsString]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
 //! [textwrap]: https://docs.rs/textwrap/0.13.2/textwrap/#displayed-width-vs-byte-size
+//! [subcommands]: https://github.com/udoprog/argwerk/blob/main/examples/subcommands.rs
 
 #![deny(missing_docs)]
 
@@ -695,6 +697,8 @@ pub enum ErrorKind {
 /// `#[rest]` attribute. This can be done both with arguments to switches, and
 /// positional arguments.
 ///
+/// You can get the rest of the arguments in their raw form using `#[rest(os)]`.
+///
 /// The following showcases capturing using a positional argument:
 ///
 /// ```rust
@@ -736,23 +740,51 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
+/// This showcases getting raw os arguments using `#[rest(os)]`:
+///
+/// ```rust
+/// use std::ffi::{OsString, OsStr};
+///
+/// argwerk::define! {
+///     /// A simple test command.
+///     #[usage = "command [-h]"]
+///     struct Args {
+///         rest: Vec<OsString>,
+///     }
+///     [#[rest(os)] args] => {
+///         rest = args;
+///     }
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(["foo", "bar", "baz"].iter().copied())?;
+///
+/// assert_eq!(args.rest, &[OsStr::new("foo"), OsStr::new("bar"), OsStr::new("baz")]);
+/// # Ok(()) }
+/// ```
+///
 /// ## Parsing optional arguments with `#[option]`
 ///
 /// Switches and positional arguments can be marked with the `#[option]`
 /// attribute. This will cause the argument to take a value of type
 /// `Option<I::Item>` where `I` represents the iterator that is being parsed.
 ///
+/// You can get an optional argument in its raw form using `#[option(os)]`.
+///
 /// An optional argument parses to `None` if:
 /// * There are no more arguments to parse.
 /// * The argument is "switch-like" (starts with `-`).
 ///
 /// ```rust
+/// use std::ffi::{OsString, OsStr};
+///
 /// argwerk::define! {
 ///     /// A simple test command.
 ///     #[usage = "command [-h]"]
 ///     struct Args {
 ///         foo: Option<String>,
 ///         bar: bool,
+///         baz: Option<OsString>,
 ///     }
 ///     /// A switch taking an optional argument.
 ///     ["--foo", #[option] arg] => {
@@ -760,6 +792,10 @@ pub enum ErrorKind {
 ///     }
 ///     ["--bar"] => {
 ///         bar = true;
+///     }
+///     /// A switch taking an optional raw argument.
+///     ["--baz", #[option(os)] arg] => {
+///         baz = arg;
 ///     }
 /// }
 ///
@@ -776,6 +812,14 @@ pub enum ErrorKind {
 ///
 /// let args = Args::parse(["--foo", "bar"].iter().copied())?;
 /// assert_eq!(args.foo.as_deref(), Some("bar"));
+/// assert!(!args.bar);
+///
+/// let args = Args::parse(["--baz"].iter().copied())?;
+/// assert_eq!(args.baz.as_deref(), None);
+/// assert!(!args.bar);
+///
+/// let args = Args::parse(["--baz", "bar"].iter().copied())?;
+/// assert_eq!(args.baz.as_deref(), Some(OsStr::new("bar")));
 /// assert!(!args.bar);
 /// # Ok(()) }
 /// ```
@@ -917,8 +961,8 @@ macro_rules! __impl {
     };
 
     // Argument formatting.
-    (@doc #[rest] $argument:ident) => { concat!("<", stringify!($argument), "..>") };
-    (@doc #[option] $argument:ident) => { concat!("[", stringify!($argument), "]") };
+    (@doc #[rest $($tt:tt)*] $argument:ident) => { concat!("<", stringify!($argument), "..>") };
+    (@doc #[option $($tt:tt)*] $argument:ident) => { concat!("[", stringify!($argument), "]") };
     (@doc #[os] $argument:ident) => { concat!("<", stringify!($argument), ">") };
     (@doc $argument:ident) => { concat!("<", stringify!($argument), ">") };
 
@@ -1052,15 +1096,24 @@ macro_rules! __impl {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __var {
+    (var $var:ident) => { $var };
+    (var (os) $var:ident) => { ::std::ffi::OsString::from($var) };
+
+    (rest $it:ident) => { $it.rest()? };
+    (rest (os) $it:ident) => { $it.rest_os() };
+
+    (next_unless_switch $it:ident) => { $it.next_unless_switch()? };
+    (next_unless_switch (os) $it:ident) => { $it.next_unless_switch_os() };
+
     // Various ways of parsing the first argument.
-    (first $it:ident, #[rest] $var:ident) => {
-        Some($var)
+    (first $it:ident, #[rest $($tt:tt)*] $var:ident) => {
+        Some($crate::__var!(var $($tt)* $var))
             .into_iter()
-            .chain($it.rest()?)
+            .chain($crate::__var!(rest $($tt)* $it))
             .collect::<Vec<_>>();
     };
-    (first $it:ident, #[option] $var:ident) => {
-        Some($var)
+    (first $it:ident, #[option $($tt:tt)*] $var:ident) => {
+        Some($crate::__var!(var $($tt)* $var))
     };
     (first $it:ident, #[os] $var:ident) => {
         Some(::std::ffi::OsString::from($var))
@@ -1070,18 +1123,16 @@ macro_rules! __var {
     };
 
     // Parse the rest of the available arguments.
-    (pos $it:ident, #[rest] $_:ident) => {
-        $it.rest()?
+    (pos $it:ident, #[rest $($tt:tt)*] $_:ident) => {
+        $crate::__var!(rest $($tt)* $it)
     };
-
     // Parse an optional argument.
-    (pos $it:ident, #[option] $_:ident) => {
-        $it.next_unless_switch()?
+    (pos $it:ident, #[option $($tt:tt)*] $_:ident) => {
+        $crate::__var!(next_unless_switch $($tt)* $it)
     };
-
     // Parse an os string argument.
     (pos $it:ident, #[os] $_:ident) => {
-        match $it.next_os()? {
+        match $it.next_os() {
             Some($var) => $var,
             None => {
                 return Err(::argwerk::Error::new(
@@ -1108,18 +1159,17 @@ macro_rules! __var {
     };
 
     // Parse the rest of the available arguments.
-    (switch $switch:ident, $it:ident, #[rest] $arg:ident) => {
-        $it.rest()?
+    (switch $switch:ident, $it:ident, #[rest $($tt:tt)*] $arg:ident) => {
+        $crate::__var!(rest $($tt)* $it)
     };
-
     // Parse an optional argument.
-    (switch $switch:ident, $it:ident, #[option] $arg:ident) => {
-        $it.next_unless_switch()?
+    (switch $switch:ident, $it:ident, #[option $($tt:tt)*] $arg:ident) => {
+        $crate::__var!(next_unless_switch $($tt)* $it)
     };
 
     // Parse next #[os] string argument.
     (switch $switch:ident, $it:ident, #[os] $var:ident) => {
-        match $it.next_os()? {
+        match $it.next_os() {
             Some($var) => $var,
             None => {
                 return Err(::argwerk::Error::new(
