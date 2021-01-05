@@ -405,3 +405,58 @@ impl fmt::Display for TextWrap<'_> {
         self.wrap(f)
     }
 }
+
+/// Helpers around an iterator.
+pub struct Input<I>
+where
+    I: Iterator,
+{
+    it: I,
+    buf: Option<I::Item>,
+}
+
+impl<I> Input<I>
+where
+    I: Iterator,
+{
+    /// Construct a new input wrapper.
+    pub fn new(it: I) -> Self {
+        Self { it, buf: None }
+    }
+}
+
+impl<I> Input<I>
+where
+    I: Iterator,
+    I::Item: AsRef<str>,
+{
+    /// Get the next item in the parser.
+    pub fn next(&mut self) -> Option<String> {
+        if let Some(item) = self.buf.take() {
+            return Some(item.as_ref().to_owned());
+        }
+
+        Some(self.it.next()?.as_ref().to_owned())
+    }
+
+    /// Peek the next item.
+    pub fn peek(&mut self) -> Option<&str> {
+        if self.buf.is_none() {
+            self.buf = self.it.next();
+        }
+
+        Some(self.buf.as_ref()?.as_ref())
+    }
+
+    /// Get the rest of available items.
+    pub fn rest(&mut self) -> impl Iterator<Item = String> + '_ {
+        std::iter::from_fn(move || {
+            if let Some(item) = self.buf.take() {
+                return Some(item.as_ref().to_owned());
+            }
+
+            let item = self.it.next()?;
+            Some(item.as_ref().to_owned())
+        })
+    }
+}
