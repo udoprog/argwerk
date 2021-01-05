@@ -1,0 +1,9 @@
+[package]
+name = "clap-project"
+version = "0.0.0"
+authors = ["John-John Tedro <udoprog@tedro.se>"]
+edition = "2018"
+
+[dependencies]
+clap = "3.0.0-beta.2"
+anyhow = "1.0.37"

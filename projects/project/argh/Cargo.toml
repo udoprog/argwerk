@@ -1,0 +1,9 @@
+[package]
+name = "argh-project"
+version = "0.0.0"
+authors = ["John-John Tedro <udoprog@tedro.se>"]
+edition = "2018"
+
+[dependencies]
+argh = "0.1.4"
+anyhow = "1.0.37"
