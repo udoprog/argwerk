@@ -154,7 +154,7 @@
 //! | clap**     | 10.6010515s (12.1861838s) | 522.9817ms (759.0176ms) | 2188k (750k)   |
 //!
 //! > *: Rebuild was triggered by adding a single newline to `main.rs`.<br>
-//! > **: Clap includes ~38 dependencies.<br>
+//! > **: Clap includes ~38 dependencies. This was built against clap `3.0.0-beta2`.<br>
 //!
 //! [projects found here]: https://github.com/udoprog/argwerk/tree/main/projects
 //! [argwerk::define]: https://docs.rs/argwerk/0/argwerk/macro.define.html

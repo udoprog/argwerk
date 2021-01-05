@@ -25,6 +25,56 @@ fn size(path: &Path) -> io::Result<u64> {
     Ok(m.len())
 }
 
+fn depndency_version(path: &Path, krate: &str) -> Result<String> {
+    use serde::Deserialize;
+    use std::collections::HashMap;
+
+    let manifest = fs::read(path.join("Cargo.toml"))?;
+    let manifest: Manifest = toml::de::from_slice(&manifest)?;
+    let dependency = manifest
+        .dependencies
+        .get(krate)
+        .ok_or_else(|| anyhow!("missing crate `{}`", krate))?;
+
+    return match dependency {
+        Dependency::Version(string) => Ok(string.clone()),
+    };
+
+    #[derive(Deserialize)]
+    struct Manifest {
+        dependencies: HashMap<String, Dependency>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Dependency {
+        Version(String),
+    }
+}
+
+fn count_deps(path: &Path) -> Result<usize> {
+    let output = Command::new("cargo")
+        .arg("tree")
+        .current_dir(path)
+        .output()?;
+
+    let mut count = 0;
+
+    for line in std::str::from_utf8(&output.stdout)?.split('\n') {
+        let line = line.trim();
+
+        if line.is_empty() {
+            continue;
+        }
+
+        if !line.contains("(*)") {
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
 fn cargo(path: &Path, command: &str, args: &[&str]) -> Result<()> {
     println!("cargo {}: {}: {:?}", command, path.display(), args);
 
@@ -56,6 +106,11 @@ fn main() -> anyhow::Result<()> {
     let mut results = Vec::new();
 
     let projects = Path::new("projects");
+
+    let clap_project = projects.join("project").join("clap");
+    let clap_version = depndency_version(&clap_project, "clap")?;
+    // remove 2 for the project itself and anyhow.
+    let clap_deps = count_deps(&clap_project)?.saturating_sub(2);
 
     for f in std::fs::read_dir(projects.join("project"))? {
         let f = f?;
@@ -122,6 +177,9 @@ fn main() -> anyhow::Result<()> {
             size = project.size / 1024,
         );
     }
+
+    println!("> *: Rebuild was triggered by adding a single newline to `main.rs`.<br>");
+    println!("> **: Clap includes {clap_deps} dependencies. This was built against clap `{clap_version}`.<br>", clap_deps = clap_deps, clap_version = clap_version);
 
     Ok(())
 }
