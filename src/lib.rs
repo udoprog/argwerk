@@ -19,8 +19,6 @@
 //! * As-close-to correct line wrapping with wide unicode characters as possible
 //!   (see [textwrap]).
 //! * Complex command structures like subcommands.
-//! * Parsing into [OsString]s. The default parser will panic in case not valid
-//!   unicode is passed into it in accordance with [std::env::args].
 //!
 //! For how to use, see the documentation of [argwerk::define] and
 //! [argwerk::args].
@@ -73,6 +71,8 @@
 //! > ```
 //!
 //! ```rust
+//! use std::ffi::OsString;
+//!
 //! argwerk::define! {
 //!     /// A command touring the capabilities of argwerk.
 //!     #[usage = "tour [-h]"]
@@ -83,6 +83,7 @@
 //!         input: Option<String>,
 //!         limit: usize = 10,
 //!         positional: Option<(String, Option<String>)>,
+//!         raw: Option<OsString>,
 //!         rest: Vec<String>,
 //!     }
 //!     /// Prints the help.
@@ -109,6 +110,10 @@
 //!     }
 //!     /// A really long argument that exceeds usage limit and forces the documentation to wrap around with newlines.
 //!     ["--really-really-really-long-argument", thing] => {
+//!     }
+//!     /// A raw argument that passes whatever was passed in from the operating system.
+//!     ["--raw", #[os] arg] => {
+//!         raw = Some(arg);
 //!     }
 //!     /// Takes argument at <foo> and <bar>.
 //!     ///
@@ -145,7 +150,7 @@ pub mod helpers;
 
 use std::error;
 
-pub use self::helpers::{Help, HelpFormat, Switch};
+pub use self::helpers::{Help, HelpFormat, InputError, Switch, TryIntoInput};
 
 /// An error raised by argwerk.
 #[derive(Debug)]
@@ -186,6 +191,9 @@ impl fmt::Display for Error {
                 Some(reason) => write!(f, "missing required argument: {}", reason),
                 None => write!(f, "missing required argument `{}`", name),
             },
+            ErrorKind::InputError { error } => {
+                write!(f, "{}", error)
+            }
             ErrorKind::Error { name, error } => {
                 write!(f, "error in argument `{}`: {}", name, error)
             }
@@ -199,6 +207,12 @@ impl error::Error for Error {
             ErrorKind::Error { error, .. } => Some(error.as_ref()),
             _ => None,
         }
+    }
+}
+
+impl From<crate::helpers::InputError> for Error {
+    fn from(error: crate::helpers::InputError) -> Self {
+        Error::new(ErrorKind::InputError { error })
     }
 }
 
@@ -330,6 +344,11 @@ pub enum ErrorKind {
         name: &'static str,
         /// The reason that the required argument was missing.
         reason: Option<&'static str>,
+    },
+    /// Failed to parse input as unicode string.
+    InputError {
+        /// The underlying error.
+        error: crate::helpers::InputError,
     },
     /// When an error has been raised while processing an argument, typically
     /// when something is being parsed.
@@ -620,6 +639,34 @@ pub enum ErrorKind {
 /// # Ok(()) }
 /// ```
 ///
+/// ## Raw os arguments with `#[os]`
+///
+/// In argwerk you can specify that a branch takes a raw argument using the
+/// `#[os]` attribute. This value will then be an
+/// [OsString][::str::ffi::OsString] and represents exactly what was fed to your
+/// program from the operating system.
+///
+/// ```rust
+/// use std::ffi::OsString;
+///
+/// argwerk::define! {
+///     /// A simple test command.
+///     #[usage = "command [-h]"]
+///     struct Args {
+///         raw: Option<OsString>,
+///     }
+///     ["--raw", #[os] arg] => {
+///         raw = Some(arg);
+///     }
+/// }
+///
+/// # fn main() -> Result<(), argwerk::Error> {
+/// let args = Args::parse(vec![OsString::from("--raw"), OsString::from("baz")])?;
+///
+/// assert!(args.raw.is_some());
+/// # Ok(()) }
+/// ```
+///
 /// ## Capture all available arguments using `#[rest]`
 ///
 /// You can write a branch that receives all available arguments using the
@@ -810,7 +857,7 @@ macro_rules! __impl {
 
             /// Parse [std::env::args].
             $vis fn args() -> Result<Self, $crate::Error> {
-                let mut it = std::env::args();
+                let mut it = std::env::args_os();
                 it.next();
                 Self::parse(it)
             }
@@ -819,16 +866,14 @@ macro_rules! __impl {
             $vis fn parse<I>(it: I) -> Result<Self, $crate::Error>
             where
                 I: IntoIterator,
-                I::Item: AsRef<str>,
-                Box<str>: From<I::Item>,
-                String: From<I::Item>,
+                I::Item: $crate::TryIntoInput,
             {
                 static HELP: &$crate::Help = &$name::HELP;
 
                 let mut it = $crate::helpers::Input::new(it.into_iter());
                 $($crate::__impl!(@init $(#[$($field_m)*])* $field, $ty $(, $expr)*);)*
 
-                while let Some(__argwerk_item) = it.next() {
+                while let Some(__argwerk_item) = it.next()? {
                     $crate::__impl!(@branches __argwerk_item, it, $($config)*);
                 }
 
@@ -849,20 +894,11 @@ macro_rules! __impl {
         $usage
     };
 
-    // Parse the rest of the available arguments.
-    (@doc #[rest] $argument:ident) => {
-        concat!("<", stringify!($argument), "..>");
-    };
-
-    // Parse an optional argument.
-    (@doc #[option] $argument:ident) => {
-        concat!("[", stringify!($argument), "]");
-    };
-
-    // Parse as its argument.
-    (@doc $argument:ident) => {
-        concat!("<", stringify!($argument), ">");
-    };
+    // Argument formatting.
+    (@doc #[rest] $argument:ident) => { concat!("<", stringify!($argument), "..>") };
+    (@doc #[option] $argument:ident) => { concat!("[", stringify!($argument), "]") };
+    (@doc #[os] $argument:ident) => { concat!("<", stringify!($argument), ">") };
+    (@doc $argument:ident) => { concat!("<", stringify!($argument), ">") };
 
     (@init $field:ident, $ty:ty) => {
         let mut $field: $ty = Default::default();
@@ -946,7 +982,7 @@ macro_rules! __impl {
                 }
             })*
             name => {
-                if $crate::__impl!(@is-switch name) {
+                if name.starts_with('-') {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
                         switch: name.into()
                     }));
@@ -988,84 +1024,104 @@ macro_rules! __impl {
     ) => {
         $(let $arg = $crate::__var!(switch $switch, $it, $(#$arg_m)* $arg);)*
     };
-
-    // Test if `$n` is switch or not.
-    (@is-switch $n:expr) => {
-        $n.starts_with('-')
-    };
 }
 
 /// Helper to decode a variable.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __var {
-    // Parse the rest of the available arguments.
+    // Various ways of parsing the first argument.
     (first $it:ident, #[rest] $var:ident) => {
-        Some($var).into_iter().chain($it.rest()).collect::<Vec<_>>();
+        Some($var)
+            .into_iter()
+            .chain($it.rest()?)
+            .collect::<Vec<_>>();
     };
-
-    // Parse an optional argument.
     (first $it:ident, #[option] $var:ident) => {
         Some($var)
     };
-
-    // Parse as its argument.
+    (first $it:ident, #[os] $var:ident) => {
+        Some(::std::ffi::OsString::from($var))
+    };
     (first $it:ident, $var:ident) => {
         $var
     };
 
     // Parse the rest of the available arguments.
     (pos $it:ident, #[rest] $_:ident) => {
-        $it.rest().collect::<Vec<_>>();
+        $it.rest()?
     };
 
     // Parse an optional argument.
     (pos $it:ident, #[option] $_:ident) => {
-        match $it.peek() {
-            Some(n) if !$crate::__impl!(@is-switch n) => $it.next(),
-            _ => None,
+        $it.next_unless_switch()?
+    };
+
+    // Parse an os string argument.
+    (pos $it:ident, #[os] $_:ident) => {
+        match $it.next_os()? {
+            Some($var) => $var,
+            None => {
+                return Err(::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingPositional {
+                        name: stringify!($var),
+                    },
+                ))
+            }
         }
     };
 
     // Parse the rest of the arguments.
     (pos $it:ident, $var:ident) => {
-        match $it.next() {
+        match $it.next()? {
             Some($var) => $var,
-            None => return Err(
-                ::argwerk::Error::new(
+            None => {
+                return Err(::argwerk::Error::new(
                     ::argwerk::ErrorKind::MissingPositional {
                         name: stringify!($var),
-                    }
-                )
-            )
-        }
-    };
-
-    // Try to parse an argument to a parameter.
-    (switch $switch:ident, $it:ident, $var:ident) => {
-        match $it.next() {
-            Some($var) => $var,
-            None => return Err(
-                ::argwerk::Error::new(
-                    ::argwerk::ErrorKind::MissingSwitchArgument {
-                        switch: $switch.into(),
-                        argument: stringify!($var),
-                    }
-                )
-            ),
+                    },
+                ))
+            }
         }
     };
 
     // Parse the rest of the available arguments.
     (switch $switch:ident, $it:ident, #[rest] $arg:ident) => {
-        $it.rest().collect::<Vec<_>>()
+        $it.rest()?
     };
 
     // Parse an optional argument.
     (switch $switch:ident, $it:ident, #[option] $arg:ident) => {
-        match $it.peek() {
-            Some(n) if !$crate::__impl!(@is-switch n) => $it.next(),
-            _ => None,
+        $it.next_unless_switch()?
+    };
+
+    // Parse next #[os] string argument.
+    (switch $switch:ident, $it:ident, #[os] $var:ident) => {
+        match $it.next_os()? {
+            Some($var) => $var,
+            None => {
+                return Err(::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingSwitchArgument {
+                        switch: $switch.into(),
+                        argument: stringify!($var),
+                    },
+                ))
+            }
+        }
+    };
+
+    // Parse next argument.
+    (switch $switch:ident, $it:ident, $var:ident) => {
+        match $it.next()? {
+            Some($var) => $var,
+            None => {
+                return Err(::argwerk::Error::new(
+                    ::argwerk::ErrorKind::MissingSwitchArgument {
+                        switch: $switch.into(),
+                        argument: stringify!($var),
+                    },
+                ))
+            }
         }
     };
 }

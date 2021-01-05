@@ -4,6 +4,7 @@
 //! expected to be private and might change between minor releases.
 
 use std::error;
+use std::ffi::OsString;
 use std::fmt;
 
 /// Default width to use when wrapping lines.
@@ -428,35 +429,139 @@ where
 impl<I> Input<I>
 where
     I: Iterator,
-    I::Item: AsRef<str>,
+    I::Item: TryIntoInput,
 {
     /// Get the next item in the parser.
-    pub fn next(&mut self) -> Option<String> {
+    pub fn next(&mut self) -> Result<Option<String>, InputError> {
         if let Some(item) = self.buf.take() {
-            return Some(item.as_ref().to_owned());
+            return Ok(Some(item.try_into_string()?));
         }
 
-        Some(self.it.next()?.as_ref().to_owned())
+        let item = match self.it.next() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        Ok(Some(item.try_into_string()?))
     }
 
-    /// Peek the next item.
-    pub fn peek(&mut self) -> Option<&str> {
+    /// Get the next os string from the input.
+    pub fn next_os(&mut self) -> Result<Option<OsString>, InputError> {
+        if let Some(item) = self.buf.take() {
+            return Ok(Some(item.into_os_string()));
+        }
+
+        let item = match self.it.next() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        Ok(Some(item.into_os_string()))
+    }
+
+    /// Take the next argument unless it looks like a switch.
+    pub fn next_unless_switch(&mut self) -> Result<Option<String>, InputError> {
+        match self.peek()? {
+            Some(s) if !s.starts_with('-') => self.next(),
+            _ => Ok(None),
+        }
+    }
+
+    /// Get the rest of available items.
+    pub fn rest(&mut self) -> Result<Vec<String>, InputError> {
+        let mut buf = Vec::new();
+
+        if let Some(item) = self.buf.take() {
+            buf.push(item.try_into_string()?);
+        }
+
+        for item in &mut self.it {
+            buf.push(item.try_into_string()?);
+        }
+
+        Ok(buf)
+    }
+
+    fn peek(&mut self) -> Result<Option<&str>, InputError> {
         if self.buf.is_none() {
             self.buf = self.it.next();
         }
 
-        Some(self.buf.as_ref()?.as_ref())
+        let item = match self.buf.as_ref() {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        Ok(Some(item.try_as_str()?))
+    }
+}
+
+#[derive(Debug)]
+pub struct InputError(());
+
+impl fmt::Display for InputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "encounted non-valid unicode in input")
+    }
+}
+
+impl error::Error for InputError {}
+
+pub trait TryIntoInput {
+    fn try_as_str(&self) -> Result<&str, InputError>;
+
+    fn try_into_string(self) -> Result<String, InputError>;
+
+    fn into_os_string(self) -> OsString;
+}
+
+impl TryIntoInput for String {
+    #[inline]
+    fn try_as_str(&self) -> Result<&str, InputError> {
+        Ok(self.as_str())
     }
 
-    /// Get the rest of available items.
-    pub fn rest(&mut self) -> impl Iterator<Item = String> + '_ {
-        std::iter::from_fn(move || {
-            if let Some(item) = self.buf.take() {
-                return Some(item.as_ref().to_owned());
-            }
+    #[inline]
+    fn try_into_string(self) -> Result<String, InputError> {
+        Ok(self)
+    }
 
-            let item = self.it.next()?;
-            Some(item.as_ref().to_owned())
-        })
+    #[inline]
+    fn into_os_string(self) -> OsString {
+        OsString::from(self)
+    }
+}
+
+impl TryIntoInput for &str {
+    #[inline]
+    fn try_as_str(&self) -> Result<&str, InputError> {
+        Ok(*self)
+    }
+
+    #[inline]
+    fn try_into_string(self) -> Result<String, InputError> {
+        Ok(self.to_owned())
+    }
+
+    #[inline]
+    fn into_os_string(self) -> OsString {
+        OsString::from(self)
+    }
+}
+
+impl TryIntoInput for OsString {
+    #[inline]
+    fn try_as_str(&self) -> Result<&str, InputError> {
+        self.to_str().ok_or_else(|| InputError(()))
+    }
+
+    #[inline]
+    fn try_into_string(self) -> Result<String, InputError> {
+        self.into_string().map_err(|_| InputError(()))
+    }
+
+    #[inline]
+    fn into_os_string(self) -> OsString {
+        self
     }
 }

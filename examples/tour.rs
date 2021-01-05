@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 argwerk::define! {
     /// A command touring the capabilities of argwerk.
     #[usage = "tour [-h]"]
@@ -8,6 +10,7 @@ argwerk::define! {
         input: Option<String>,
         limit: usize = 10,
         positional: Option<(String, Option<String>)>,
+        raw: Option<OsString>,
         rest: Vec<String>,
     }
     /// Prints the help.
@@ -31,6 +34,10 @@ argwerk::define! {
     /// Read from the specified input.
     ["--input", #[option] path] => {
         input = path;
+    }
+    /// A raw argument that passes whatever was passed in from the operating system.
+    ["--raw", #[os] arg] => {
+        raw = Some(arg);
     }
     /// A really long argument that exceeds usage limit and forces the documentation to wrap around with newlines.
     ["--really-really-really-long-argument", thing] => {
