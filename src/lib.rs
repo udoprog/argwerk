@@ -1032,63 +1032,63 @@ macro_rules! __impl {
     // Expansion for all branches.
     (@branches
         $switch:ident, $it:ident,
-        $($(#[$_meta:meta])* [$($config:tt)*] $(if $cond:expr)? => $block:block)*
+        $(#[$_pfx_meta:meta])*
+        $(
+            [$sw_first_pat:literal $(| $sw_rest_pat:literal)* $(, $(#$sw_arg_m:tt)? $sw_arg:ident)*]
+            $(if $sw_cond:expr)?
+            => $sw_block:block
+            $(#[$_sw_meta:meta])*
+        )*
+        $(
+            [$(#$pos_first_m:tt)? $pos_first:ident $(, $(#$pos_rest_m:tt)? $pos_rest:ident)*]
+            $(if $pos_cond:expr)?
+            => $pos_block:block
+            $(#[$_pos_meta:meta])*
+        )*
     ) => {
-        match $switch.as_str() {
-            $(__argwerk_name if $crate::__impl!(@pat __argwerk_name, [$($config)*]) $(&& $cond)* => {
-                let __argwerk_name = __argwerk_name.into();
+        let __argwerk_name = $switch.as_str();
 
-                $crate::__impl!(@bindings $switch, $it, [$($config)*]);
+        match __argwerk_name {
+            $($sw_first_pat $(| $sw_rest_pat)* $(if $sw_cond)* => {
+                $(let $sw_arg = $crate::__var!(switch $switch, $it, $(#$sw_arg_m)* $sw_arg);)*
 
-                if let Err(error) = (|| $crate::helpers::into_result($block))() {
+                if let Err(error) = (|| $crate::helpers::into_result($sw_block))() {
                     return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
-                        name: __argwerk_name,
+                        name: __argwerk_name.into(),
                         error
                     }));
                 }
+
+                continue;
             })*
-            name => {
-                if name.starts_with('-') {
-                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
-                        switch: name.into()
-                    }));
-                } else {
-                    return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
-                        argument: name.into()
-                    }));
-                }
-            }
+            _ => {
+                $(if true $(&& $pos_cond)* {
+                    let __argwerk_name: Box<str> = __argwerk_name.into();
+
+                    let $pos_first = $crate::__var!(first $it, $(#$pos_first_m)* $switch);
+                    $(let $pos_rest = $crate::__var!(pos $it, $(#$pos_rest_m)* $pos_rest);)*
+
+                    if let Err(error) = (|| $crate::helpers::into_result($pos_block))() {
+                        return Err(::argwerk::Error::new(::argwerk::ErrorKind::Error {
+                            name: __argwerk_name,
+                            error
+                        }));
+                    }
+
+                    continue;
+                })*
+            },
         }
-    };
 
-    // Generates a branch pattern for positional arguments.
-    (@pat $v:ident, [$(#$first_m:tt)* $first:ident $(, $(#$rest_m:tt)* $rest:ident)*]) => {
-        true
-    };
-
-    // Generates a branch pattern for switches.
-    (@pat $v:ident, [$first:literal $(| $rest:literal)* $(, $(#$arg_m:tt)* $arg:ident)*]) => {
-        match $v {
-            $first $(| $rest)* => true,
-            _ => false,
+        if __argwerk_name.starts_with('-') {
+            return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedSwitch {
+                switch: __argwerk_name.into()
+            }));
+        } else {
+            return Err(::argwerk::Error::new(::argwerk::ErrorKind::UnsupportedArgument {
+                argument: __argwerk_name.into()
+            }));
         }
-    };
-
-    // Match positional arguments.
-    (@bindings
-        $switch:ident, $it:ident,
-        [$(#$first_m:tt)? $first:ident $(, $(#$rest_m:tt)? $rest:ident)*]
-    ) => {
-        let $first = $crate::__var!(first $it, $(#$first_m)* $switch);
-        $(let $rest = $crate::__var!(pos $it, $(#$rest_m)* $rest);)*
-    };
-
-    // A single branch expansion.
-    (@bindings
-        $switch:ident, $it:ident,
-        [$_a:literal $(| $_b:literal)* $(, $(#$arg_m:tt)? $arg:ident)*]
-    ) => {
-        $(let $arg = $crate::__var!(switch $switch, $it, $(#$arg_m)* $arg);)*
     };
 }
 
