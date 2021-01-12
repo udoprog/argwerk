@@ -907,7 +907,7 @@ macro_rules! __impl {
         $(#[doc = $doc:literal])*
         $(#[usage = $usage:literal])*
         $vis:vis struct $name:ident {
-            $( $(#[$($field_m:tt)*])* $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
+            $( $(#$field_m:tt)* $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
         }
         $($config:tt)*
     ) => {
@@ -937,28 +937,22 @@ macro_rules! __impl {
                 static HELP: &$crate::Help = &$name::HELP;
 
                 let mut it = $crate::helpers::Input::new(it.into_iter());
-                $($crate::__impl!(@init $(#[$($field_m)*])* $field, $ty $(, $expr)*);)*
+                $($crate::__impl!(@init $(#$field_m)* $field, $ty $(, $expr)*);)*
 
                 while let Some(__argwerk_item) = it.next()? {
                     $crate::__impl!(@branches __argwerk_item, it, $($config)*);
                 }
 
                 Ok(Self {
-                    $($field: $crate::__impl!(@assign $(#[$($field_m)*])* $field)),*
+                    $($field: $crate::__impl!(@assign $(#$field_m)* $field)),*
                 })
             }
         }
     };
 
-    // Default usage.
-    (@usage $name:ident,) => {
-        stringify!($name)
-    };
-
-    // Specified usage.
-    (@usage $name:ident, $usage:literal) => {
-        $usage
-    };
+    // Usage string.
+    (@usage $name:ident,) => { stringify!($name) };
+    (@usage $name:ident, $usage:literal) => { $usage };
 
     // Argument formatting.
     (@doc #[rest $($tt:tt)*] $argument:ident) => { concat!("<", stringify!($argument), "..>") };
@@ -1032,18 +1026,18 @@ macro_rules! __impl {
     // Expansion for all branches.
     (@branches
         $switch:ident, $it:ident,
-        $(#[$_pfx_meta:meta])*
+        $(#$_pfx_meta:tt)*
         $(
             [$sw_first_pat:literal $(| $sw_rest_pat:literal)* $(, $(#$sw_arg_m:tt)? $sw_arg:ident)*]
             $(if $sw_cond:expr)?
             => $sw_block:block
-            $(#[$_sw_meta:meta])*
+            $(#$_sw_meta:tt)*
         )*
         $(
             [$(#$pos_first_m:tt)? $pos_first:ident $(, $(#$pos_rest_m:tt)? $pos_rest:ident)*]
             $(if $pos_cond:expr)?
             => $pos_block:block
-            $(#[$_pos_meta:meta])*
+            $(#$_pos_meta:tt)*
         )*
     ) => {
         let __argwerk_name = $switch.as_str();
