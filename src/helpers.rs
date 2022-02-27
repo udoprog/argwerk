@@ -165,7 +165,7 @@ impl<'a> fmt::Display for HelpFormat<'a> {
         writeln!(f, "Usage: {name}", name = self.help.usage)?;
 
         if !self.help.docs.is_empty() {
-            writeln!(f, "{}", TextWrap::new("", &self.help.docs, self.width, 0))?;
+            writeln!(f, "{}", TextWrap::new("", self.help.docs, self.width, 0))?;
         }
 
         writeln!(f)?;
@@ -198,8 +198,8 @@ impl<'a> fmt::Display for HelpFormat<'a> {
                 let more = it.peek().is_some();
 
                 let wrap = TextWrap {
-                    init: &d.usage,
-                    docs: &d.docs,
+                    init: d.usage,
+                    docs: d.docs,
                     width: self.width,
                     padding: self.padding,
                     init_len: Some(usage_len),
@@ -274,13 +274,12 @@ impl<'a> TextWrap<'a> {
 
         let fill = init_len + self.padding;
 
-        let trim = match it.peek() {
-            Some(line) => Some(chars_count(line.as_ref(), |c| c == ' ')),
-            None => None,
-        };
+        let trim = it.peek().map(|line| {
+            chars_count(line, |c| c == ' ')
+        });
 
         while let Some(line) = it.next() {
-            let mut line = line.as_ref();
+            let mut line = *line;
 
             // Trim the line by skipping the whitespace common to all lines..
             if let Some(trim) = trim {
@@ -367,7 +366,7 @@ impl<'a> TextWrap<'a> {
 
         /// Get the next index that is alphanumeric.
         fn next_index(s: &str, p: fn(char) -> bool) -> Option<usize> {
-            Some(s.char_indices().skip_while(|(_, c)| !p(*c)).next()?.0)
+            Some(s.char_indices().find(|&(_, c)| p(c))?.0)
         }
 
         /// Count the number of spaces in the string, and return the first index that is not a space.
@@ -432,6 +431,10 @@ where
     I::Item: TryIntoInput,
 {
     /// Get the next item in the parser.
+    // XXX For now, shut up Clippy. Eventually,
+    // change the public interface or impl
+    // iterator.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<Option<String>, InputError> {
         if let Some(item) = self.buf.take() {
             return Ok(Some(item.try_into_string()?));
@@ -585,7 +588,7 @@ impl TryIntoInput for &str {
 impl TryIntoInput for OsString {
     #[inline]
     fn try_as_str(&self) -> Result<&str, InputError> {
-        self.to_str().ok_or_else(|| InputError(()))
+        self.to_str().ok_or(InputError(()))
     }
 
     #[inline]
@@ -602,12 +605,12 @@ impl TryIntoInput for OsString {
 impl TryIntoInput for &OsStr {
     #[inline]
     fn try_as_str(&self) -> Result<&str, InputError> {
-        self.to_str().ok_or_else(|| InputError(()))
+        self.to_str().ok_or(InputError(()))
     }
 
     #[inline]
     fn try_into_string(self) -> Result<String, InputError> {
-        Ok(self.to_str().ok_or_else(|| InputError(()))?.to_owned())
+        Ok(self.to_str().ok_or(InputError(()))?.to_owned())
     }
 
     #[inline]

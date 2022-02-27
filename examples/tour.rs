@@ -28,7 +28,7 @@ argwerk::define! {
         limit = str::parse(&n)?;
     }
     /// Write to the file specified by <path>.
-    ["--file", path] if !file.is_some() => {
+    ["--file", path] if file.is_none() => {
         file = Some(path);
     }
     /// Read from the specified input.
@@ -40,13 +40,13 @@ argwerk::define! {
         raw = Some(arg);
     }
     /// A really long argument that exceeds usage limit and forces the documentation to wrap around with newlines.
-    ["--really-really-really-long-argument", thing] => {
+    ["--really-really-really-long-argument", _thing] => {
     }
     /// Takes argument at <foo> and <bar>.
     ///
     ///    * This is an indented message. The first alphanumeric character determines the indentation to use.
-    [foo, #[option] bar, #[rest] args] if positional.is_none() => {
-        positional = Some((foo, bar));
+    [first, #[option] second, #[rest] args] if positional.is_none() => {
+        positional = Some((first, second));
         rest = args;
     }
 }
