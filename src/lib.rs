@@ -907,12 +907,12 @@ macro_rules! __impl {
         $(#[doc = $doc:literal])*
         $(#[usage = $usage:literal])*
         $vis:vis struct $name:ident {
-            $( $(#$field_m:tt)* $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
+            $( $(#$field_m:tt)* $fvis:vis $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
         }
         $($config:tt)*
     ) => {
         #[derive(Debug)]
-        $vis struct $name { $($field: $ty,)* }
+        $vis struct $name { $($fvis $field: $ty,)* }
 
         impl $name {
             pub const HELP: $crate::Help = $crate::Help {
