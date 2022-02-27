@@ -922,6 +922,8 @@ macro_rules! __impl {
             };
 
             /// Parse [std::env::args_os].
+            // XXX Clippy gets unaccountably worked up here.
+            #[allow(clippy::self_named_constructors)]
             $vis fn args() -> Result<Self, $crate::Error> {
                 let mut it = std::env::args_os();
                 it.next();
