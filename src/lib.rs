@@ -826,14 +826,12 @@ pub enum ErrorKind {
 #[macro_export]
 macro_rules! define {
     (
-        $(#[doc = $doc:literal])*
-        $(#[usage = $usage:literal])*
+        $(#$attr:tt)*
         $vis:vis struct $name:ident { $($body:tt)* }
         $($config:tt)*
     ) => {
         $crate::__impl! {
-            $(#[doc = $doc])*
-            $(#[usage = $usage])*
+            $(#$attr)*
             $vis struct $name { $($body)* }
             $($config)*
         }
@@ -898,26 +896,90 @@ macro_rules! args {
     }};
 }
 
+/// Filter for docstrings.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __filter_asg_doc {
+    (#[doc = $d:literal] $(#$other:tt)* $($l:literal)*) => {
+        $crate::__filter_asg_doc!($(#$other)* $($l)* $d)
+    };
+    (#$_:tt $(#$other:tt)* $($l:literal)*) => {
+        $crate::__filter_asg_doc!($(#$other)* $($l)*)
+    };
+    ($($l:literal)*) => {
+        &[$($l),*]
+    };
+}
+
+/// Filter for usage. XXX Stops at first found.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __filter_asg_usage {
+    ($name:ident, #[usage = $usage:literal] $(#$_:tt)*) => {
+        $usage
+    };
+    ($name:ident, #$_:tt $(#$other:tt)*) => {
+        $crate::__filter_asg_usage!($name, $(#$other)*)
+    };
+    ($name:ident,) => {
+        stringify!($name)
+    };
+}
+
+/// Filter out the stuff we don't want to process ourself.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __filter_asg_other {
+    (#[doc = $_:literal] $(#$other:tt)*, $(#$done:tt)* $v:vis struct $i:ident $body:tt) => {
+        $crate::__filter_asg_other!{
+            $(#$other)*,
+            $(#$done)*
+            $v struct $i $body
+        }
+    };
+    (#[usage = $_:literal] $(#$other:tt)*, $(#$done:tt)* $v:vis struct $i:ident $body:tt) => {
+        $crate::__filter_asg_other!{
+            $(#$other)*,
+            $(#$done)*
+            $v struct $i $body
+        }
+    };
+    (#$attr:tt $(#$other:tt)*, $(#$done:tt)* $v:vis struct $i:ident $body:tt) => {
+        $crate::__filter_asg_other!{
+            $(#$other)*,
+            $(#$done)*
+            #$attr
+            $v struct $i $body
+        }
+    };
+    (, $(#$done:tt)* $v:vis struct $i:ident $body:tt) => {
+        $(#$done)*
+        $v struct $i $body
+    }
+}
+
 /// Internal implementation details of the [args] macro.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __impl {
     // The guts of the parser.
     (
-        $(#[doc = $doc:literal])*
-        $(#[usage = $usage:literal])*
+        $(#$attr:tt)*
         $vis:vis struct $name:ident {
-            $( $(#$field_m:tt)* $fvis:vis $field:ident: $ty:ty $(= $expr:expr)? ),* $(,)?
+            $( $(#$field_m:tt)* $fvis:vis $field:ident : $ty:ty $(= $expr:expr)? ),* $(,)?
         }
         $($config:tt)*
     ) => {
-        #[derive(Debug)]
-        $vis struct $name { $($fvis $field: $ty,)* }
+        $crate::__filter_asg_other! {
+            $(#$attr)*
+            #[derive(Debug)],
+            $vis struct $name { $($fvis $field: $ty,)* }
+        }
 
         impl $name {
             pub const HELP: $crate::Help = $crate::Help {
-                usage: $crate::__impl!(@usage $name, $($usage)*),
-                docs: &[$($doc,)*],
+                usage: $crate::__filter_asg_usage!($name, $(#$attr)*),
+                docs: $crate::__filter_asg_doc!($(#$attr)*),
                 switches: $crate::__impl!(@switches $($config)*)
             };
 
@@ -951,10 +1013,6 @@ macro_rules! __impl {
             }
         }
     };
-
-    // Usage string.
-    (@usage $name:ident,) => { stringify!($name) };
-    (@usage $name:ident, $usage:literal) => { $usage };
 
     // Argument formatting.
     (@doc #[rest $($tt:tt)*] $argument:ident) => { concat!("<", stringify!($argument), "..>") };
