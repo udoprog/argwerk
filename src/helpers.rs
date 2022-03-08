@@ -274,9 +274,7 @@ impl<'a> TextWrap<'a> {
 
         let fill = init_len + self.padding;
 
-        let trim = it.peek().map(|line| {
-            chars_count(line, |c| c == ' ')
-        });
+        let trim = it.peek().map(|line| chars_count(line, |c| c == ' '));
 
         while let Some(line) = it.next() {
             let mut line = *line;
