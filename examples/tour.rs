@@ -2,6 +2,7 @@ use std::ffi::OsString;
 
 argwerk::define! {
     /// A command touring the capabilities of argwerk.
+    #[derive(Default)]
     #[usage = "tour [-h]"]
     struct Args {
         help: bool,
