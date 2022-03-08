@@ -76,6 +76,7 @@
 //!
 //! argwerk::define! {
 //!     /// A command touring the capabilities of argwerk.
+//!     #[derive(Default)]
 //!     #[usage = "tour [-h]"]
 //!     struct Args {
 //!         help: bool,
@@ -431,10 +432,14 @@ pub enum ErrorKind {
 /// declaration. This can be used to conveniently group and access data
 /// populated during argument parsing.
 ///
+/// You can use arbitrary attributes for the struct.
+/// Note that [`std::fmt::Debug`] will be automatically derived.
+///
 /// ```rust
 /// argwerk::define! {
 ///     /// A simple test command.
 ///     #[usage = "command [-h]"]
+///     #[derive(Default)]
 ///     struct Args {
 ///         help: bool,
 ///         limit: usize = 10,
