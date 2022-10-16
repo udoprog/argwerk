@@ -12,4 +12,4 @@ jobs:
         toolchain: stable
         override: true
     - run: cargo build
-    - run: cargo test --all-features
+    - run: cargo test
