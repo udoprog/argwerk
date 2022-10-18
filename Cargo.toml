@@ -9,7 +9,7 @@ readme = "README.md"
 homepage = "https://github.com/udoprog/argwerk"
 repository = "https://github.com/udoprog/argwerk"
 license = "MIT/Apache-2.0"
-keywords = ["argument", "cli", "arg", "parser", "parse"]
+keywords = ["arg", "argument", "cli", "parse", "parser"]
 categories = ["command-line-interface"]
 
 [dev-dependencies]
