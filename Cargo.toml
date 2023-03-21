@@ -3,6 +3,7 @@ name = "argwerk"
 version = "0.20.2"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
+rust-version = "1.56"
 description = "Simple command-line parser through a declarative macro."
 documentation = "https://docs.rs/argwerk"
 readme = "README.md"
