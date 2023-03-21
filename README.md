@@ -29,7 +29,7 @@ For how to use, see the documentation of [argwerk::define] and
 
 <br>
 
-## Examples
+## Usage
 
 Initially when you're adding arguments to your program you can use
 [argwerk::args]. This allows for easily parsing out a handful of optional

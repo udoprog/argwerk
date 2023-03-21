@@ -1,6 +1,6 @@
 [package]
 name = "argwerk"
-version = "0.20.2"
+version = "0.20.3"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 rust-version = "1.56"
