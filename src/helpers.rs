@@ -160,7 +160,7 @@ impl HelpFormat<'_> {
     }
 }
 
-impl<'a> fmt::Display for HelpFormat<'a> {
+impl fmt::Display for HelpFormat<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Usage: {name}", name = self.help.usage)?;
 
