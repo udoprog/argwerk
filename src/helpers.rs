@@ -452,11 +452,7 @@ where
             return Some(item.into_os_string());
         }
 
-        let item = match self.it.next() {
-            Some(item) => item,
-            None => return None,
-        };
-
+        let item = self.it.next()?;
         Some(item.into_os_string())
     }
 
@@ -511,10 +507,7 @@ where
             self.buf = self.it.next();
         }
 
-        let item = match self.buf.as_ref() {
-            Some(item) => item,
-            None => return None,
-        };
+        let item = self.buf.as_ref()?;
 
         item.try_as_str().ok()
     }
