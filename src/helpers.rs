@@ -109,7 +109,7 @@ impl Help {
     /// assert!(formatted.split('\n').all(|line| line.len() < 120));
     /// # Ok(()) }
     /// ```
-    pub fn format(&self) -> HelpFormat {
+    pub fn format(&self) -> HelpFormat<'_> {
         HelpFormat {
             help: self,
             width: WIDTH,
